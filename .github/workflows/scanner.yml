@@ -1,0 +1,38 @@
+name: SFL Scanner
+
+on:
+  # Запускается каждые 6 часов автоматически
+  # Внутри скрипт крутится 5ч 55м, потом следующий job подхватывает
+  schedule:
+    - cron: '0 */6 * * *'
+  # Ручной запуск для теста
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 370   # 6ч 10м — чуть больше чем duration скрипта
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run scanner loop
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python sfl_scanner.py --duration 21300 --interval 30

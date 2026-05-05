@@ -1,0 +1,38 @@
+name: SFL Bot
+
+on:
+  # Перезапускается каждые 6 часов
+  # Бот крутится 5ч 50м, потом следующий job стартует
+  schedule:
+    - cron: '30 */6 * * *'   # Со смещением 30 мин от сканера чтобы не конкурировали
+  # Ручной запуск
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 365   # 6ч 5м
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Telegram bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python sfl_bot.py --duration 21000
