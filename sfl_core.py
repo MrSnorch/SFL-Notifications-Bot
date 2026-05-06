@@ -531,13 +531,16 @@ def scan_farm(farm: dict, track: dict,
     # ── HONEY ─────────────────────────────────────────────────────────────────
     # Скорость производства мёда определяем для каждого улья отдельно:
     #   1. honey["speed"] — если игра сохраняет вычисленное значение напрямую
-    #   2. bumpkin.skills["Hyper Bees"] * 0.1 — известный скилл
-    #   3. farm.buffs — временные / коллектибл-бусты (ищем "honey" в labourKey)
+    #   2. flowers[active]["rate"] — скорость из прикреплённого цветка
+    #   3. bumpkin.skills["Hyper Bees"] * 0.1 — скилл (+0.1 к rate за уровень)
+    #   4. farm.buffs — временные / коллектибл-бусты (ищем "honey" в labourKey)
     # Базовая скорость: 1.0 (1 ед. за 24ч).
+    # Поле honey["produced"] — накопленное время производства в мс (при rate=1.0).
+    # Доля заполнения = produced / HONEY_FULL_MS.
     HONEY_FULL_MS  = 24 * 3_600_000
     bumpkin_skills = farm.get("bumpkin", {}).get("skills", {})
     hyper_bees_lvl = bumpkin_skills.get("Hyper Bees", 0)
-    base_honey_rate = 1.0 + 0.1 * hyper_bees_lvl   # из скиллов
+    hyper_bees_bonus = 0.1 * hyper_bees_lvl  # добавляется к rate цветка
 
     # Бусты из farm.buffs (временные бафы, коллектиблы и т.д.)
     buff_honey_bonus = 0.0
@@ -556,26 +559,32 @@ def scan_farm(farm: dict, track: dict,
                 hive_swarm += 1
 
             # Производство мёда идёт только пока цветок ещё растёт
-            has_active_flower = any(
-                _fix_ts(fl.get("attachedUntil", 0)) > now_ms
-                for fl in hive.get("flowers", [])
+            active_flower = next(
+                (fl for fl in hive.get("flowers", [])
+                 if _fix_ts(fl.get("attachedUntil", 0)) > now_ms),
+                None
             )
-            if not has_active_flower:
+            if not active_flower:
                 continue
 
             honey_data = hive.get("honey", {})
-            h_amount   = honey_data.get("amount", 0)
-            h_updated  = _fix_ts(honey_data.get("updatedAt", 0))
+            # FIX: поле называется "produced" (мс накопленного времени), а не "amount"
+            # Конвертируем мс → долю заполнения [0, 1): produced_ms / HONEY_FULL_MS
+            produced_ms = honey_data.get("produced", honey_data.get("amount", 0))
+            h_amount    = produced_ms / HONEY_FULL_MS
+            h_updated   = _fix_ts(honey_data.get("updatedAt", 0))
             if not h_updated:
                 continue
 
-            # Приоритет: скорость из самого поля honey["speed"] (если игра
-            # её сохраняет), иначе — вычисленная из скиллов + buffs.
+            # Приоритет 1: honey["speed"] — если игра сохраняет итоговую скорость
+            # Приоритет 2: flowers[active]["rate"] + скиллы + бафы
             stored_speed = honey_data.get("speed")
             if stored_speed and stored_speed > 0:
                 honey_rate = float(stored_speed)
             else:
-                honey_rate = base_honey_rate + buff_honey_bonus
+                # FIX: берём rate из активного цветка (основная составляющая скорости)
+                flower_rate = float(active_flower.get("rate", 1.0))
+                honey_rate  = flower_rate + hyper_bees_bonus + buff_honey_bonus
 
             honey_ms_per_unit = HONEY_FULL_MS / honey_rate
 
