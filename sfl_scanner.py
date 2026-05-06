@@ -191,11 +191,11 @@ COOLDOWN_429 = 300  # 5 минут при rate limit
 # ГЛАВНЫЙ ЦИКЛ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
+def run_loop(duration_seconds: int = 21300, request_interval: int = 60):
     """
     Основной цикл сканера.
     duration=21300с (5ч 55м) — чуть меньше лимита GitHub Actions job 6ч.
-    interval=30с — как часто опрашиваем API.
+    request_interval=60с — пауза между каждым запросом к API (1 запрос в минуту).
     """
     if not TG_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан!")
@@ -204,7 +204,7 @@ def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
     end_time  = time.time() + duration_seconds
     iteration = 0
 
-    log.info(f"Сканер запущен. Duration={duration_seconds}s, interval={interval_seconds}s")
+    log.info(f"Сканер запущен. Duration={duration_seconds}s, request_interval={request_interval}s")
 
     while time.time() < end_time:
         iteration += 1
@@ -214,7 +214,6 @@ def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
         users = get_all_active_users()
         log.info(f"Активных пользователей: {len(users)}")
 
-        # Сканируем пользователей по очереди с паузой между каждым
         for i, user in enumerate(users):
             if time.time() >= end_time:
                 break
@@ -224,25 +223,22 @@ def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
                 remaining_cd = int(cooldown_until - time.time())
                 username = user.get("username") or user.get("first_name") or str(telegram_id)
                 log.info(f"[{username}] Пропуск: rate limit, ещё {remaining_cd}с кулдауна")
-                continue
-            try:
-                scan_user(user)
-            except Exception as e:
-                if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
-                    _cooldowns[telegram_id] = time.time() + COOLDOWN_429
-                    username = user.get("username") or user.get("first_name") or str(telegram_id)
-                    log.warning(f"[{username}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
-                else:
-                    raise
+            else:
+                try:
+                    scan_user(user)
+                except Exception as e:
+                    if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
+                        _cooldowns[telegram_id] = time.time() + COOLDOWN_429
+                        username = user.get("username") or user.get("first_name") or str(telegram_id)
+                        log.warning(f"[{username}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
+                    else:
+                        raise
+
             if i < len(users) - 1:
-                time.sleep(3)  # пауза между пользователями чтобы не давить API
-
-        sleep_sec = min(interval_seconds, max(0.0, end_time - time.time()))
-        if sleep_sec <= 0:
-            break
-
-        log.info(f"Сон {int(sleep_sec)}с...")
-        time.sleep(sleep_sec)
+                sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
+                if sleep_sec > 0:
+                    log.info(f"Пауза {int(sleep_sec)}с перед следующим пользователем...")
+                    time.sleep(sleep_sec)
 
     log.info("Сканер завершил работу.")
 
@@ -269,11 +265,11 @@ if __name__ == "__main__":
                         help="Один прогон и выход")
     parser.add_argument("--duration", type=int, default=21300,
                         help="Длительность основного цикла (секунды)")
-    parser.add_argument("--interval", type=int, default=30,
-                        help="Интервал между опросами API (секунды)")
+    parser.add_argument("--request-interval", type=int, default=60,
+                        help="Пауза между запросами к API (секунды, default: 60)")
     args = parser.parse_args()
 
     if args.once:
         run_once()
     else:
-        run_loop(duration_seconds=args.duration, interval_seconds=args.interval)
+        run_loop(duration_seconds=args.duration, request_interval=args.request_interval)
