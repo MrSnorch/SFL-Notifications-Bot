@@ -360,7 +360,19 @@ def load_from_api(farm_id: str, api_key: str) -> dict:
     )
     r.raise_for_status()
     data = r.json()
-    return data.get("farm", data)
+    if isinstance(data, str):
+        import json as _json
+        data = _json.loads(data)
+    if not isinstance(data, dict):
+        raise ValueError(f"Unexpected API response type: {type(data).__name__}")
+    farm = data.get("farm", data)
+    # Handle double-encoded JSON: API sometimes returns farm as a JSON string
+    if isinstance(farm, str):
+        import json as _json
+        farm = _json.loads(farm)
+    if not isinstance(farm, dict):
+        raise ValueError(f"Unexpected 'farm' type: {type(farm).__name__}, value: {str(farm)[:120]}")
+    return farm
 
 # ══════════════════════════════════════════════════════════════════════════════
 # СКАНИРОВАНИЕ
@@ -381,6 +393,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("crops", True):
         crop_map: dict[str, list] = {}
         for pid, plot in farm.get("crops", {}).items():
+            if not isinstance(plot, dict):
+                continue
             c = plot.get("crop")
             if not c or not c.get("name"):
                 continue
@@ -406,6 +420,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("trees", True):
         tt = []
         for tid, tree in farm.get("trees", {}).items():
+            if not isinstance(tree, dict):
+                continue
             ch = _fix_ts(tree.get("wood", {}).get("choppedAt", 0))
             if ch:
                 tt.append(ch + TREE_RESPAWN_MS)
@@ -426,6 +442,8 @@ def scan_farm(farm: dict, track: dict,
         if track.get(key, False):
             st = []
             for sid, s in farm.get(key, {}).items():
+                if not isinstance(s, dict):
+                    continue
                 m = _fix_ts(s.get("stone", {}).get("minedAt", 0))
                 if m:
                     st.append(m + respawn)
@@ -440,6 +458,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("oil", False):
         ot = []
         for oid, s in farm.get("oilReserves", {}).items():
+            if not isinstance(s, dict):
+                continue
             d = _fix_ts(s.get("oil", {}).get("drilledAt", 0))
             if d:
                 ot.append(d + OIL_RESPAWN_MS)
@@ -474,6 +494,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("sunstones", False):
         ss = []
         for ssid, s in farm.get("sunstones", {}).items():
+            if not isinstance(s, dict):
+                continue
             m = _fix_ts(s.get("stone", {}).get("minedAt", 0))
             if m:
                 ss.append(m + SUNSTONE_RESPAWN_MS)
@@ -488,6 +510,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("fruits", True):
         fruit_map: dict[str, list] = {}
         for pid, patch in farm.get("fruitPatches", {}).items():
+            if not isinstance(patch, dict):
+                continue
             fr = patch.get("fruit")
             if not fr or fr.get("harvestsLeft", 0) == 0:
                 continue
@@ -508,6 +532,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("flowers", True):
         flower_map: dict[str, list] = {}
         for bid, bed in farm.get("flowers", {}).get("flowerBeds", {}).items():
+            if not isinstance(bed, dict):
+                continue
             fl = bed.get("flower")
             if not fl:
                 continue
@@ -555,6 +581,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("honey", True):
         ht = []; hive_swarm = 0
         for hid, hive in farm.get("beehives", {}).items():
+            if not isinstance(hive, dict):
+                continue
             if hive.get("swarm"):
                 hive_swarm += 1
 
@@ -616,6 +644,8 @@ def scan_farm(farm: dict, track: dict,
         ag: dict[str, list] = {}
         for src in ("henHouse", "barn"):
             for aid, animal in farm.get(src, {}).get("animals", {}).items():
+                if not isinstance(animal, dict):
+                    continue
                 atype    = animal.get("type", "Animal")
                 state_a  = animal.get("state", "")
                 awake_at = _fix_ts(animal.get("awakeAt", 0))
