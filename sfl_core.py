@@ -133,39 +133,59 @@ CROP_GROW_MS: dict[str, int] = {
 }
 
 FRUIT_REGROW_MS: dict[str, int] = {
-    "Tomato":    2*3_600_000,
-    "Lemon":     4*3_600_000,
-    "Chestnut":  4*3_600_000,
-    "Blueberry": 6*3_600_000,
-    "Starfruit": 6*3_600_000,
-    "Orange":    8*3_600_000,
-    "Apple":     12*3_600_000,
-    "Banana":    12*3_600_000,
-    "Coconut":   12*3_600_000,
-    "Grape":     8*3_600_000,
-    "Big Apple": 12*3_600_000, "Big Orange": 8*3_600_000,
-    "Big Banana": 12*3_600_000, "Giant Apple": 12*3_600_000, "Giant Orange": 8*3_600_000,
+    # Значения из PATCH_FRUIT_SEEDS[seed].plantSeconds в игре (fruitPlanted.ts)
+    "Tomato":    2*3_600_000,   # Tomato Seed
+    "Lemon":     4*3_600_000,   # Lemon Seed
+    "Blueberry": 6*3_600_000,   # Blueberry Seed
+    "Orange":    8*3_600_000,   # Orange Seed
+    "Apple":     12*3_600_000,  # Apple Seed
+    "Banana":    12*3_600_000,  # Banana Plant
+    "Celestine": 6*3_600_000,   # Celestine Seed
+    "Lunara":    12*3_600_000,  # Lunara Seed
+    "Duskberry": 24*3_600_000,  # Duskberry Seed
+    "Grape":     12*3_600_000,  # Grape Seed (greenhouse)
 }
 
-FLOWER_GROW_MS: dict[str, int] = {
-    "default": 24*3_600_000,
-    "Celestine": 24*3_600_000, "Duskberry": 24*3_600_000, "Lunara": 24*3_600_000,
-    "Primrose Petal": 24*3_600_000, "Clover": 24*3_600_000, "Gladiolus": 24*3_600_000,
-    "Prism Petal": 72*3_600_000, "Primula Enigma": 72*3_600_000,
-    "Celestial Frostbloom": 72*3_600_000,
-    **{f"{c} {k}": (48 if c in ("Red","Purple","Blue") else 24)*3_600_000
-       for k in ("Balloon Flower","Carnation","Daffodil","Lotus","Pansy","Cosmos","Tulip")
-       for c in ("Red","Yellow","Purple","White","Blue")}
-}
+# Время роста цветов: readyAt = plantedAt + BASE_MS (без множителей!)
+# Бусты уже зашиты в plantedAt игрой через сдвиг назад по формуле:
+#   plantedAt = createdAt - (baseSecs - boostedSecs) * 1000
+# Поэтому readyAt = plantedAt + baseSecs * 1000 — никаких коэффициентов не нужно.
+#
+# Источник: FLOWER_SEEDS[seed].plantSeconds из flowers.ts (игровой код):
+#   Sunpetal Seed = 24h: Pansy, Cosmos, Prism Petal (все цвета)
+#   Bloom Seed    = 48h: Balloon Flower, Daffodil, Celestial Frostbloom (все цвета)
+#   Lily Seed     = 120h: Carnation, Lotus, Primula Enigma (все цвета)
+#   Edelweiss Seed = 72h: Edelweiss (все цвета)
+#   Gladiolus Seed = 72h: Gladiolus (все цвета)
+#   Lavender Seed  = 72h: Lavender (все цвета)
+#   Clover Seed    = 72h: Clover (все цвета)
+def _build_flower_grow_ms() -> dict[str, int]:
+    _COLORS = ("Red", "Yellow", "Purple", "White", "Blue")
+    _H = 3_600_000
+    result: dict[str, int] = {}
+    # 24h — Sunpetal Seed
+    for c in _COLORS:
+        result[f"{c} Pansy"] = 24*_H
+        result[f"{c} Cosmos"] = 24*_H
+    result["Prism Petal"] = 24*_H
+    # 48h — Bloom Seed
+    for c in _COLORS:
+        result[f"{c} Balloon Flower"] = 48*_H
+        result[f"{c} Daffodil"] = 48*_H
+    result["Celestial Frostbloom"] = 48*_H
+    # 72h — Edelweiss / Gladiolus / Lavender / Clover Seeds
+    for c in _COLORS:
+        for family in ("Edelweiss", "Gladiolus", "Lavender", "Clover"):
+            result[f"{c} {family}"] = 72*_H
+    # 120h — Lily Seed
+    for c in _COLORS:
+        result[f"{c} Carnation"] = 120*_H
+        result[f"{c} Lotus"] = 120*_H
+    result["Primula Enigma"] = 120*_H
+    return result
 
-def _flower_speed_mult(farm: dict) -> float:
-    """Return grow-time multiplier (<1 = faster) from bumpkin skills."""
-    skills = _d(farm.get("bumpkin")).get("skills", {})
-    mult = 1.0
-    if skills.get("Flower Power"):     mult *= 0.9   # -10%
-    if skills.get("Blooming Boost"):   mult *= 0.9   # -10%
-    if skills.get("Petal Blessed"):    mult *= 0.9   # -10%
-    return mult
+FLOWER_GROW_MS: dict[str, int] = _build_flower_grow_ms()
+_FLOWER_GROW_MS_DEFAULT = 48*3_600_000  # fallback: Bloom Seed
 
 TREE_RESPAWN_MS     = 2  * 3_600_000
 STONE_RESPAWN_MS    = 4  * 3_600_000
@@ -532,10 +552,13 @@ def scan_farm(farm: dict, track: dict,
             if not fr or fr.get("harvestsLeft", 0) == 0:
                 continue
             name = fr.get("name", "Фрукт")
-            hv = _fix_ts(fr.get("harvestedAt", 0))
+            # harvestedAt — это сдвинутый plantedAt после сбора (как в цветах).
+            # До первого сбора используем plantedAt.
+            # readyAt = (harvestedAt или plantedAt) + BASE_REGROW_MS
+            hv = _fix_ts(fr.get("harvestedAt") or fr.get("plantedAt", 0))
             if not hv:
                 continue
-            regrow = FRUIT_REGROW_MS.get(name, 14*3_600_000)
+            regrow = FRUIT_REGROW_MS.get(name, 12*3_600_000)
             fruit_map.setdefault(name, []).append(hv + regrow)
         for name, times in fruit_map.items():
             times.sort(); rc = sum(1 for t in times if t <= now_ms)
@@ -561,7 +584,9 @@ def scan_farm(farm: dict, track: dict,
             planted = _fix_ts(fl.get("plantedAt", 0))
             if not planted:
                 continue
-            grow = int(FLOWER_GROW_MS.get(name, FLOWER_GROW_MS["default"]) * _flower_speed_mult(farm))
+            # Бусты уже закодированы в plantedAt игрой (сдвиг назад).
+            # readyAt = plantedAt + BASE_SEED_TIME_MS — никаких множителей не нужно.
+            grow = FLOWER_GROW_MS.get(name, _FLOWER_GROW_MS_DEFAULT)
             flower_map.setdefault(name, []).append(planted + grow)
         for name, times in flower_map.items():
             times.sort(); rc = sum(1 for t in times if t <= now_ms)
