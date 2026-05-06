@@ -28,7 +28,8 @@ log = logging.getLogger("SFL")
 
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
-    tg_send, tg_edit, tg_delete, tg_upsert_status, Event,
+    tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
+    tg_unpin_message, Event,
     discover_dynamic_resources, merge_discovered,
 )
 from sfl_supabase import (
@@ -136,9 +137,16 @@ def scan_user(user: dict):
     alerts_state  = state.get("ready_alerts", {})
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
-    status_text = format_status_message(events, farm_id)
-    new_msg_id  = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id)
+    status_text           = format_status_message(events, farm_id)
+    new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id)
     state["status_msg_id"] = new_msg_id
+
+    # Закрепляем если появилось новое сообщение (старое не удалось отредактировать)
+    if is_new and new_msg_id:
+        if status_msg_id and status_msg_id != new_msg_id:
+            tg_unpin_message(TG_TOKEN, telegram_id, status_msg_id)
+        ok = tg_pin_message(TG_TOKEN, telegram_id, new_msg_id)
+        log.info(f"[{username}] {'📌 Закреплено' if ok else '⚠️ Не удалось закрепить'} статус-сообщение {new_msg_id}")
 
     # ── Алерты о готовности (пингуют) ────────────────────────────────────────
     state["ready_alerts"] = process_ready_alerts(

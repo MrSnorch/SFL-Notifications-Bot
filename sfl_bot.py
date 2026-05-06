@@ -256,7 +256,7 @@ def handle_status(chat_id: int):
         return
 
     msg = send(chat_id, "⏳ Загружаю данные фермы...")
-    msg_id = msg["message_id"] if msg else None
+    loading_msg_id = msg["message_id"] if msg else None
 
     try:
         farm     = load_from_api(user["farm_id"], user["api_key"])
@@ -270,7 +270,6 @@ def handle_status(chat_id: int):
 
         if dynamic_resources != existing:
             state["discovered_resources"] = dynamic_resources
-            update_user(chat_id, state=state)
             new_keys = {d["key"] for d in dynamic_resources} - {d["key"] for d in existing}
             if new_keys:
                 labels = ", ".join(d["label"] for d in dynamic_resources
@@ -279,15 +278,40 @@ def handle_status(chat_id: int):
                      f"🔍 <b>Найдены новые ресурсы для отслеживания:</b> {labels}\n"
                      f"Включи их в /settings если нужно.")
 
-        events = scan_farm(farm, tracking, dynamic_resources)
-        text   = format_status_message(events, user["farm_id"])
-    except Exception as e:
-        text = f"❌ Ошибка при загрузке фермы:\n<code>{e}</code>"
+        events       = scan_farm(farm, tracking, dynamic_resources)
+        status_text  = format_status_message(events, user["farm_id"])
 
-    if msg_id:
-        edit_text(chat_id, msg_id, text)
+        # ── Статус-сообщение: редактируем "загрузку" → готовый текст ─────────
+        old_status_id = state.get("status_msg_id")
+
+        if loading_msg_id:
+            # Превращаем сообщение "⏳ Загружаю..." в статус
+            edit_text(chat_id, loading_msg_id, status_text)
+            new_status_id = loading_msg_id
+        else:
+            new_status_id = None
+
+        # Закрепляем если это новое сообщение (не то, что уже закреплено)
+        if new_status_id and new_status_id != old_status_id:
+            if old_status_id:
+                tg("unpinChatMessage",
+                   chat_id=chat_id, message_id=old_status_id)
+            tg("pinChatMessage",
+               chat_id=chat_id, message_id=new_status_id,
+               disable_notification=True)
+
+        state["status_msg_id"] = new_status_id or old_status_id or 0
+        update_user(chat_id, state=state)
+        return
+
+    except Exception as e:
+        status_text = f"❌ Ошибка при загрузке фермы:\n<code>{e}</code>"
+
+    # Fallback: редактируем или отправляем новое
+    if loading_msg_id:
+        edit_text(chat_id, loading_msg_id, status_text)
     else:
-        send(chat_id, text)
+        send(chat_id, status_text)
 
 
 def handle_stop(chat_id: int):

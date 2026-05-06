@@ -613,11 +613,38 @@ def tg_delete(token: str, chat_id: int, message_id: int):
     except Exception:
         pass
 
+def tg_pin_message(token: str, chat_id: int, message_id: int,
+                   disable_notification: bool = True) -> bool:
+    """Закрепляет сообщение в чате. disable_notification=True — без звука."""
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/pinChatMessage",
+            json={"chat_id": chat_id, "message_id": message_id,
+                  "disable_notification": disable_notification},
+            timeout=15)
+        return r.ok
+    except Exception:
+        return False
+
+
+def tg_unpin_message(token: str, chat_id: int, message_id: int) -> bool:
+    """Открепляет конкретное сообщение."""
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/unpinChatMessage",
+            json={"chat_id": chat_id, "message_id": message_id},
+            timeout=15)
+        return r.ok
+    except Exception:
+        return False
+
+
 def tg_upsert_status(token: str, chat_id: int, text: str,
-                     message_id: int | None) -> int:
-    """Создаёт или редактирует статус-сообщение. Возвращает message_id."""
+                     message_id: int | None) -> tuple[int, bool]:
+    """Создаёт или редактирует статус-сообщение.
+    Возвращает (message_id, is_new) — is_new=True если создано новое сообщение."""
     if message_id:
         if tg_edit(token, chat_id, message_id, text):
-            return message_id
+            return message_id, False
     mid = tg_send(token, chat_id, text, silent=True)
-    return mid or message_id or 0
+    return (mid or message_id or 0), True
