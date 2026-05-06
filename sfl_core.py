@@ -378,6 +378,13 @@ def load_from_api(farm_id: str, api_key: str) -> dict:
 # СКАНИРОВАНИЕ
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _d(val) -> dict:
+    """Return val if it's a dict, else {}.  Guards against API returning strings."""
+    return val if isinstance(val, dict) else {}
+
+def _l(val) -> list:
+    """Return val if it's a list, else [].  Guards against API returning strings."""
+    return val if isinstance(val, list) else []
 def _fix_ts(ts):
     """Конвертирует секунды → миллисекунды если нужно."""
     if ts and 0 < ts < 10_000_000_000:
@@ -422,7 +429,7 @@ def scan_farm(farm: dict, track: dict,
         for tid, tree in farm.get("trees", {}).items():
             if not isinstance(tree, dict):
                 continue
-            ch = _fix_ts(tree.get("wood", {}).get("choppedAt", 0))
+            ch = _fix_ts(_d(tree.get("wood")).get("choppedAt", 0))
             if ch:
                 tt.append(ch + TREE_RESPAWN_MS)
         if tt:
@@ -444,7 +451,7 @@ def scan_farm(farm: dict, track: dict,
             for sid, s in farm.get(key, {}).items():
                 if not isinstance(s, dict):
                     continue
-                m = _fix_ts(s.get("stone", {}).get("minedAt", 0))
+                m = _fix_ts(_d(s.get("stone")).get("minedAt", 0))
                 if m:
                     st.append(m + respawn)
             if st:
@@ -460,7 +467,7 @@ def scan_farm(farm: dict, track: dict,
         for oid, s in farm.get("oilReserves", {}).items():
             if not isinstance(s, dict):
                 continue
-            d = _fix_ts(s.get("oil", {}).get("drilledAt", 0))
+            d = _fix_ts(_d(s.get("oil")).get("drilledAt", 0))
             if d:
                 ot.append(d + OIL_RESPAWN_MS)
         if ot:
@@ -496,7 +503,7 @@ def scan_farm(farm: dict, track: dict,
         for ssid, s in farm.get("sunstones", {}).items():
             if not isinstance(s, dict):
                 continue
-            m = _fix_ts(s.get("stone", {}).get("minedAt", 0))
+            m = _fix_ts(_d(s.get("stone")).get("minedAt", 0))
             if m:
                 ss.append(m + SUNSTONE_RESPAWN_MS)
         if ss:
@@ -531,7 +538,7 @@ def scan_farm(farm: dict, track: dict,
     # ── FLOWERS ───────────────────────────────────────────────────────────────
     if track.get("flowers", True):
         flower_map: dict[str, list] = {}
-        for bid, bed in farm.get("flowers", {}).get("flowerBeds", {}).items():
+        for bid, bed in _d(farm.get("flowers")).get("flowerBeds", {}).items():
             if not isinstance(bed, dict):
                 continue
             fl = bed.get("flower")
@@ -564,13 +571,15 @@ def scan_farm(farm: dict, track: dict,
     # Поле honey["produced"] — накопленное время производства в мс (при rate=1.0).
     # Доля заполнения = produced / HONEY_FULL_MS.
     HONEY_FULL_MS  = 24 * 3_600_000
-    bumpkin_skills = farm.get("bumpkin", {}).get("skills", {})
+    bumpkin_skills = _d(farm.get("bumpkin")).get("skills", {})
     hyper_bees_lvl = bumpkin_skills.get("Hyper Bees", 0)
     hyper_bees_bonus = 0.1 * hyper_bees_lvl  # добавляется к rate цветка
 
     # Бусты из farm.buffs (временные бафы, коллектиблы и т.д.)
     buff_honey_bonus = 0.0
-    for buff in farm.get("buffs", []):
+    for buff in _l(farm.get("buffs")):
+        if not isinstance(buff, dict):
+            continue
         lk = buff.get("labourKey", "")
         if "honey" in lk.lower():
             pct = buff.get("boostPercent", 0)
@@ -588,14 +597,14 @@ def scan_farm(farm: dict, track: dict,
 
             # Производство мёда идёт только пока цветок ещё растёт
             active_flower = next(
-                (fl for fl in hive.get("flowers", [])
-                 if _fix_ts(fl.get("attachedUntil", 0)) > now_ms),
+                (fl for fl in _l(hive.get("flowers"))
+                 if isinstance(fl, dict) and _fix_ts(fl.get("attachedUntil", 0)) > now_ms),
                 None
             )
             if not active_flower:
                 continue
 
-            honey_data = hive.get("honey", {})
+            honey_data = _d(hive.get("honey"))
             # FIX: поле называется "produced" (мс накопленного времени), а не "amount"
             # Конвертируем мс → долю заполнения [0, 1): produced_ms / HONEY_FULL_MS
             produced_ms = honey_data.get("produced", honey_data.get("amount", 0))
@@ -622,7 +631,7 @@ def scan_farm(farm: dict, track: dict,
                 ready_at = int(now_ms + (1.0 - current_amount) * honey_ms_per_unit)
                 ht.append(ready_at)
 
-        bee_swarm = len(farm.get("collectibles", {}).get("Bee Swarm", []))
+        bee_swarm = len(_d(farm.get("collectibles")).get("Bee Swarm", []))
         swarm_total = hive_swarm + bee_swarm
         if ht:
             ht.sort(); rc = sum(1 for t in ht if t <= now_ms)
@@ -633,7 +642,7 @@ def scan_farm(farm: dict, track: dict,
 
     # ── MUSHROOMS ─────────────────────────────────────────────────────────────
     if track.get("mushrooms", False):
-        mush = farm.get("mushrooms", {})
+        mush = _d(farm.get("mushrooms"))
         sa = _fix_ts(mush.get("spawnedAt", 0))
         if sa:
             events.append(Event("Mushrooms", "🍄", sa + MUSH_SPAWN_MS, 1,
@@ -643,7 +652,7 @@ def scan_farm(farm: dict, track: dict,
     if track.get("animals", False):
         ag: dict[str, list] = {}
         for src in ("henHouse", "barn"):
-            for aid, animal in farm.get(src, {}).get("animals", {}).items():
+            for aid, animal in _d(farm.get(src)).get("animals", {}).items():
                 if not isinstance(animal, dict):
                     continue
                 atype    = animal.get("type", "Animal")
