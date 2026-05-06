@@ -381,12 +381,25 @@ class Event:
 # API
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_from_api(farm_id: str, api_key: str) -> dict:
-    r = requests.get(
-        f"https://api.sunflower-land.com/community/farms/{farm_id}",
-        headers={"x-api-key": api_key},
-        timeout=25,
-    )
+def load_from_api(farm_id: str, api_key: str, retries: int = 3, timeout: int = 30) -> dict:
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(
+                f"https://api.sunflower-land.com/community/farms/{farm_id}",
+                headers={"x-api-key": api_key},
+                timeout=timeout,
+            )
+            break
+        except requests.exceptions.Timeout as e:
+            last_exc = e
+            if attempt < retries:
+                import time as _time
+                _time.sleep(2 ** attempt)  # 2s, 4s
+            else:
+                raise
+    else:
+        raise last_exc
     r.raise_for_status()
     data = r.json()
     if isinstance(data, str):
