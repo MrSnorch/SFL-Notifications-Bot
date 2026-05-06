@@ -6,7 +6,7 @@ sfl_scanner.py — Мульти-пользовательский сканер SF
 сканирует их фермы и шлёт уведомления в личные сообщения.
 """
 
-import json, os, sys, time, logging, threading
+import json, os, sys, time, logging
 from datetime import datetime
 
 # ── зависимости ──────────────────────────────────────────────────────────────
@@ -207,16 +207,13 @@ def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
         users = get_all_active_users()
         log.info(f"Активных пользователей: {len(users)}")
 
-        # Запускаем сканирование каждого пользователя в отдельном потоке
-        threads = []
-        for user in users:
-            t = threading.Thread(target=scan_user, args=(user,), daemon=True)
-            t.start()
-            threads.append(t)
-
-        # Ждём завершения всех потоков (максимум 25с чтобы успеть поспать)
-        for t in threads:
-            t.join(timeout=25)
+        # Сканируем пользователей по очереди с паузой между каждым
+        for i, user in enumerate(users):
+            if time.time() >= end_time:
+                break
+            scan_user(user)
+            if i < len(users) - 1:
+                time.sleep(3)  # пауза между пользователями чтобы не давить API
 
         sleep_sec = min(interval_seconds, max(0.0, end_time - time.time()))
         if sleep_sec <= 0:
