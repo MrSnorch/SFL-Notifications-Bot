@@ -158,6 +158,15 @@ FLOWER_GROW_MS: dict[str, int] = {
        for c in ("Red","Yellow","Purple","White","Blue")}
 }
 
+def _flower_speed_mult(farm: dict) -> float:
+    """Return grow-time multiplier (<1 = faster) from bumpkin skills."""
+    skills = _d(farm.get("bumpkin")).get("skills", {})
+    mult = 1.0
+    if skills.get("Flower Power"):     mult *= 0.9   # -10%
+    if skills.get("Blooming Boost"):   mult *= 0.9   # -10%
+    if skills.get("Petal Blessed"):    mult *= 0.9   # -10%
+    return mult
+
 TREE_RESPAWN_MS     = 2  * 3_600_000
 STONE_RESPAWN_MS    = 4  * 3_600_000
 IRON_RESPAWN_MS     = 8  * 3_600_000
@@ -552,7 +561,7 @@ def scan_farm(farm: dict, track: dict,
             planted = _fix_ts(fl.get("plantedAt", 0))
             if not planted:
                 continue
-            grow = FLOWER_GROW_MS.get(name, FLOWER_GROW_MS["default"])
+            grow = int(FLOWER_GROW_MS.get(name, FLOWER_GROW_MS["default"]) * _flower_speed_mult(farm))
             flower_map.setdefault(name, []).append(planted + grow)
         for name, times in flower_map.items():
             times.sort(); rc = sum(1 for t in times if t <= now_ms)
