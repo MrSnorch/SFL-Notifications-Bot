@@ -529,15 +529,36 @@ def scan_farm(farm: dict, track: dict,
                 pending_at_ms=pnd))
 
     # ── HONEY ─────────────────────────────────────────────────────────────────
+    # Мёд заполняется независимо: 1 единица за 24 часа, пока растёт цветок.
+    # Время готовности = now + (1.0 - текущее_кол-во) * 24h
+    # Данные берём из hive["honey"]["amount"] + hive["honey"]["updatedAt"].
+    HONEY_FULL_MS = 24 * 3_600_000
     if track.get("honey", True):
         ht = []; hive_swarm = 0
         for hid, hive in farm.get("beehives", {}).items():
             if hive.get("swarm"):
                 hive_swarm += 1
-            for fl_link in hive.get("flowers", []):
-                until = _fix_ts(fl_link.get("attachedUntil", 0))
-                if until:
-                    ht.append(until); break
+
+            # Производство мёда идёт только пока цветок ещё растёт
+            has_active_flower = any(
+                _fix_ts(fl.get("attachedUntil", 0)) > now_ms
+                for fl in hive.get("flowers", [])
+            )
+            if not has_active_flower:
+                continue
+
+            honey_data = hive.get("honey", {})
+            h_amount   = honey_data.get("amount", 0)
+            h_updated  = _fix_ts(honey_data.get("updatedAt", 0))
+            if not h_updated:
+                continue
+
+            # Текущее кол-во мёда = снэпшот + выработка с момента снэпшота
+            current_amount = h_amount + (now_ms - h_updated) / HONEY_FULL_MS
+            if current_amount < 1.0:
+                ready_at = int(now_ms + (1.0 - current_amount) * HONEY_FULL_MS)
+                ht.append(ready_at)
+
         bee_swarm = len(farm.get("collectibles", {}).get("Bee Swarm", []))
         swarm_total = hive_swarm + bee_swarm
         if ht:
@@ -592,28 +613,95 @@ def scan_farm(farm: dict, track: dict,
 # ФОРМАТИРОВАНИЕ СООБЩЕНИЙ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _fmt_ms_human(ms: int) -> str:
-    if ms <= 0: return "сейчас"
+_I18N = {
+    "now": {
+        "ru": "сейчас", "en": "now", "uk": "зараз",
+    },
+    "in_dhms": {
+        "ru": "через {d}д {h:02d}:{m:02d}:{s:02d}",
+        "en": "in {d}d {h:02d}:{m:02d}:{s:02d}",
+        "uk": "через {d}д {h:02d}:{m:02d}:{s:02d}",
+    },
+    "in_hms": {
+        "ru": "через {h}ч {m:02d}м {s:02d}с",
+        "en": "in {h}h {m:02d}m {s:02d}s",
+        "uk": "через {h}г {m:02d}хв {s:02d}с",
+    },
+    "in_ms": {
+        "ru": "через {m}м {s:02d}с",
+        "en": "in {m}m {s:02d}s",
+        "uk": "через {m}хв {s:02d}с",
+    },
+    "in_s": {
+        "ru": "через {s}с",
+        "en": "in {s}s",
+        "uk": "через {s}с",
+    },
+    "no_resources": {
+        "ru": "🌻 Ферма <b>{farm_id}</b>\n\nНет отслеживаемых ресурсов.",
+        "en": "🌻 Farm <b>{farm_id}</b>\n\nNo tracked resources.",
+        "uk": "🌻 Ферма <b>{farm_id}</b>\n\nНемає відстежуваних ресурсів.",
+    },
+    "farm_header": {
+        "ru": "🌻 <b>Ферма {farm_id}</b>",
+        "en": "🌻 <b>Farm {farm_id}</b>",
+        "uk": "🌻 <b>Ферма {farm_id}</b>",
+    },
+    "all_ready": {
+        "ru": "\n✅ <b>Всё готово к сбору!</b>",
+        "en": "\n✅ <b>Everything is ready to harvest!</b>",
+        "uk": "\n✅ <b>Все готово до збору!</b>",
+    },
+    "ready_section": {
+        "ru": "\n✅ <b>Готово к сбору:</b>",
+        "en": "\n✅ <b>Ready to harvest:</b>",
+        "uk": "\n✅ <b>Готово до збору:</b>",
+    },
+    "updated_at": {
+        "ru": "\n<i>Обновлено: {ts}</i>",
+        "en": "\n<i>Updated: {ts}</i>",
+        "uk": "\n<i>Оновлено: {ts}</i>",
+    },
+    "ready_alert": {
+        "ru": "{emoji} <b>{name}{cnt}{extra} — готово к сбору ✅</b>",
+        "en": "{emoji} <b>{name}{cnt}{extra} — ready to harvest ✅</b>",
+        "uk": "{emoji} <b>{name}{cnt}{extra} — готово до збору ✅</b>",
+    },
+}
+
+
+def _i18n(key: str, lang: str, **kwargs) -> str:
+    lang = lang if lang in ("ru", "en", "uk") else "ru"
+    tmpl = _I18N.get(key, {}).get(lang) or _I18N.get(key, {}).get("ru", f"[{key}]")
+    return tmpl.format(**kwargs) if kwargs else tmpl
+
+
+def _fmt_ms_human(ms: int, lang: str = "ru") -> str:
+    if ms <= 0:
+        return _i18n("now", lang)
     s = ms // 1000; h, rem = divmod(s, 3600); m, sc = divmod(rem, 60)
     if h >= 24:
         d = h // 24; h = h % 24
-        return f"через {d}д {h:02d}:{m:02d}:{sc:02d}"
-    if h > 0: return f"через {h}ч {m:02d}м {sc:02d}с"
-    if m > 0: return f"через {m}м {sc:02d}с"
-    return f"через {sc}с"
+        return _i18n("in_dhms", lang, d=d, h=h, m=m, s=sc)
+    if h > 0:
+        return _i18n("in_hms", lang, h=h, m=m, s=sc)
+    if m > 0:
+        return _i18n("in_ms", lang, m=m, s=sc)
+    return _i18n("in_s", lang, s=sc)
+
 
 def format_status_message(events: list[Event], farm_id: str,
-                           tz=None) -> str:
+                           tz=None, lang: str = "ru") -> str:
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
     if not events:
-        return f"🌻 Ферма <b>{farm_id}</b>\n\nНет отслеживаемых ресурсов."
+        return _i18n("no_resources", lang, farm_id=farm_id)
 
     pending = [e for e in events if e.ready_count < e.count]
-    lines = [f"🌻 <b>Ферма {farm_id}</b>"]
+    lines = [_i18n("farm_header", lang, farm_id=farm_id)]
 
     if not pending:
-        lines.append("\n✅ <b>Всё готово к сбору!</b>")
+        lines.append(_i18n("all_ready", lang))
     else:
         lines.append("")
         for e in sorted(pending, key=lambda x: x.pending_at_ms)[:20]:
@@ -626,25 +714,27 @@ def format_status_message(events: list[Event], farm_id: str,
                 swarm_extra = f" (Swarm x{m.group(1)})" if m else ""
             lines.append(
                 f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
-                f" — {_fmt_ms_human(ms_left)} — {e.fmt_pending_ready_time(_tz)}"
+                f" — {_fmt_ms_human(ms_left, lang)} — {e.fmt_pending_ready_time(_tz)}"
             )
 
     ready_now = [e for e in events if e.ready_count > 0]
     if ready_now:
-        lines.append("\n✅ <b>Готово к сбору:</b>")
+        lines.append(_i18n("ready_section", lang))
         for e in ready_now:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
             lines.append(f"  {e.emoji} {e.name}{cnt}")
 
     ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
-    lines.append(f"\n<i>Обновлено: {ts}</i>")
+    lines.append(_i18n("updated_at", lang, ts=ts))
     return "\n".join(lines)
 
-def format_ready_alert(e: Event) -> str:
+
+def format_ready_alert(e: Event, lang: str = "ru") -> str:
     cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
-    return f"{e.emoji} <b>{e.name}{cnt}{extra_label} — готово к сбору ✅</b>"
+    return _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
+                 cnt=cnt, extra=extra_label)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TELEGRAM API HELPERS
