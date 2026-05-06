@@ -107,6 +107,7 @@ STRINGS = {
             "/stop — приостановить уведомления\n"
             "/resume — возобновить уведомления\n"
             "/lang — сменить язык\n"
+            "/clean — очистить чат\n"
             "/help — это сообщение"
         ),
         "en": (
@@ -119,6 +120,7 @@ STRINGS = {
             "/stop — pause notifications\n"
             "/resume — resume notifications\n"
             "/lang — change language\n"
+            "/clean — clean up the chat\n"
             "/help — this message"
         ),
         "uk": (
@@ -131,6 +133,7 @@ STRINGS = {
             "/stop — призупинити сповіщення\n"
             "/resume — поновити сповіщення\n"
             "/lang — змінити мову\n"
+            "/clean — очистити чат\n"
             "/help — це повідомлення"
         ),
     },
@@ -284,6 +287,16 @@ STRINGS = {
         "en": "Please /start first",
         "uk": "Спочатку /start",
     },
+    "clean_done": {
+        "ru": "🧹 Удалено сообщений: <b>{count}</b>\n📌 Закреплённый статус и уведомления сохранены.",
+        "en": "🧹 Deleted messages: <b>{count}</b>\n📌 Pinned status and notifications kept.",
+        "uk": "🧹 Видалено повідомлень: <b>{count}</b>\n📌 Закріплений статус і сповіщення збережено.",
+    },
+    "clean_nothing": {
+        "ru": "✨ Чат уже чист.",
+        "en": "✨ Chat is already clean.",
+        "uk": "✨ Чат вже чистий.",
+    },
 }
 
 
@@ -350,6 +363,27 @@ def answer_callback(callback_query_id, text=""):
 
 def delete_msg(chat_id, message_id):
     tg("deleteMessage", chat_id=chat_id, message_id=message_id)
+
+def track_msg(chat_id, message_id):
+    """Сохранить ID сервисного сообщения для последующей очистки."""
+    user = get_user(chat_id)
+    if not user:
+        return
+    state = user.get("state") or {}
+    ids = state.get("service_msg_ids", [])
+    ids.append(message_id)
+    state["service_msg_ids"] = ids[-200:]  # хранить последние 200
+    update_user(chat_id, state=state)
+
+
+def send_service(chat_id, text, reply_markup=None, silent=False):
+    """Отправить сообщение и запомнить его ID для /clean."""
+    result = send(chat_id, text, reply_markup=reply_markup, silent=silent)
+    if result and result.get("message_id"):
+        track_msg(chat_id, result["message_id"])
+    return result
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # КЛАВИАТУРЫ
@@ -425,7 +459,7 @@ def handle_start(chat_id, user_from):
     )
     user = get_user(chat_id)
     lang = get_lang(user)
-    send(chat_id, t("welcome", lang), silent=True)
+    send_service(chat_id, t("welcome", lang), silent=True)
 
 
 def handle_setfarm(chat_id, text):
@@ -433,19 +467,19 @@ def handle_setfarm(chat_id, text):
     lang = get_lang(user)
     parts = text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
-        send(chat_id, t("setfarm_usage", lang))
+        send_service(chat_id, t("setfarm_usage", lang))
         return
     farm_id = parts[1].strip()
     if not farm_id.isdigit():
-        send(chat_id, t("setfarm_not_number", lang))
+        send_service(chat_id, t("setfarm_not_number", lang))
         return
     get_or_create_user(chat_id)
     update_user(chat_id, farm_id=farm_id)
     was_activated = activate_user_if_ready(chat_id)
     if was_activated:
-        send(chat_id, t("setfarm_ok_active", lang, farm_id=farm_id))
+        send_service(chat_id, t("setfarm_ok_active", lang, farm_id=farm_id))
     else:
-        send(chat_id, t("setfarm_ok_pending", lang, farm_id=farm_id))
+        send_service(chat_id, t("setfarm_ok_pending", lang, farm_id=farm_id))
 
 
 def handle_setkey(chat_id, message_id, text):
@@ -453,7 +487,7 @@ def handle_setkey(chat_id, message_id, text):
     lang = get_lang(user)
     parts = text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip():
-        send(chat_id, t("setkey_usage", lang))
+        send_service(chat_id, t("setkey_usage", lang))
         return
     api_key = parts[1].strip()
     delete_msg(chat_id, message_id)
@@ -461,19 +495,19 @@ def handle_setkey(chat_id, message_id, text):
     update_user(chat_id, api_key=api_key)
     was_activated = activate_user_if_ready(chat_id)
     if was_activated:
-        send(chat_id, t("setkey_ok_active", lang))
+        send_service(chat_id, t("setkey_ok_active", lang))
     else:
         user = get_user(chat_id)
         if not user or not user.get("farm_id"):
-            send(chat_id, t("setkey_ok_need_farm", lang))
+            send_service(chat_id, t("setkey_ok_need_farm", lang))
         else:
-            send(chat_id, t("setkey_ok", lang))
+            send_service(chat_id, t("setkey_ok", lang))
 
 
 def handle_settings(chat_id):
     user = get_user(chat_id)
     if not user:
-        send(chat_id, t("not_registered", DEFAULT_LANG))
+        send_service(chat_id, t("not_registered", DEFAULT_LANG))
         return
     lang              = get_lang(user)
     tracking          = user.get("tracking") or DEFAULT_TRACKING
@@ -483,7 +517,7 @@ def handle_settings(chat_id):
     text = t("settings_title", lang)
     if dynamic_resources:
         text += t("settings_dynamic_note", lang, count=len(dynamic_resources))
-    send(chat_id, text,
+    send_service(chat_id, text,
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang))
 
 
@@ -491,9 +525,9 @@ def handle_status(chat_id):
     user = get_user(chat_id)
     lang = get_lang(user)
     if not user or not user.get("farm_id") or not user.get("api_key"):
-        send(chat_id, t("status_no_farm", lang))
+        send_service(chat_id, t("status_no_farm", lang))
         return
-    msg = send(chat_id, t("status_loading", lang))
+    msg = send_service(chat_id, t("status_loading", lang))
     loading_msg_id = msg["message_id"] if msg else None
     try:
         farm     = load_from_api(user["farm_id"], user["api_key"])
@@ -508,7 +542,7 @@ def handle_status(chat_id):
             if new_keys:
                 labels = ", ".join(d["label"] for d in dynamic_resources
                                    if d["key"] in new_keys)
-                send(chat_id, t("status_new_resources", lang, labels=labels))
+                send_service(chat_id, t("status_new_resources", lang, labels=labels))
         events       = scan_farm(farm, tracking, dynamic_resources)
         user_tz      = get_tz(state.get("timezone"))
         status_text  = format_status_message(events, user["farm_id"], tz=user_tz)
@@ -541,7 +575,7 @@ def handle_stop(chat_id):
         send(chat_id, t("not_registered", lang))
         return
     update_user(chat_id, active=False)
-    send(chat_id, t("stop_ok", lang))
+    send_service(chat_id, t("stop_ok", lang))
 
 
 def handle_resume(chat_id):
@@ -551,10 +585,10 @@ def handle_resume(chat_id):
         send(chat_id, t("not_registered", lang))
         return
     if not user.get("farm_id") or not user.get("api_key"):
-        send(chat_id, t("resume_no_farm", lang))
+        send_service(chat_id, t("resume_no_farm", lang))
         return
     update_user(chat_id, active=True)
-    send(chat_id, t("resume_ok", lang))
+    send_service(chat_id, t("resume_ok", lang))
 
 
 def handle_lang(chat_id):
@@ -562,7 +596,7 @@ def handle_lang(chat_id):
     user = get_user(chat_id)
     lang = get_lang(user)
     flag, name = SUPPORTED_LANGS[lang]
-    send(
+    send_service(
         chat_id,
         t("lang_choose", lang, current=f"{flag} {name}"),
         reply_markup=lang_keyboard(lang),
@@ -662,6 +696,54 @@ def handle_callback(callback_query):
             t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
         )
 
+
+def handle_clean(chat_id, command_msg_id):
+    """Удалить все сервисные сообщения бота, оставить статус и уведомления."""
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    if not user:
+        send(chat_id, t("not_registered", lang))
+        return
+
+    state = user.get("state") or {}
+
+    # ID сообщений которые нужно сохранить
+    keep_ids = set()
+    status_id = state.get("status_msg_id")
+    if status_id:
+        keep_ids.add(status_id)
+    for alert in state.get("ready_alerts", {}).values():
+        if isinstance(alert, dict) and alert.get("mid"):
+            keep_ids.add(alert["mid"])
+
+    service_ids = state.get("service_msg_ids", [])
+    # Добавляем и саму команду /clean
+    service_ids.append(command_msg_id)
+
+    deleted = 0
+    for mid in service_ids:
+        if mid and mid not in keep_ids:
+            result = tg("deleteMessage", chat_id=chat_id, message_id=mid)
+            if result is not None or result == True:
+                deleted += 1
+
+    state["service_msg_ids"] = []
+    update_user(chat_id, state=state)
+
+    if deleted > 0:
+        confirmation = send(chat_id, t("clean_done", lang, count=deleted))
+        # Сразу запомнить это сообщение-подтверждение
+        if confirmation and confirmation.get("message_id"):
+            state2 = (get_user(chat_id) or {}).get("state") or {}
+            state2["service_msg_ids"] = [confirmation["message_id"]]
+            update_user(chat_id, state=state2)
+    else:
+        msg = send(chat_id, t("clean_nothing", lang))
+        if msg and msg.get("message_id"):
+            state2 = (get_user(chat_id) or {}).get("state") or {}
+            state2["service_msg_ids"] = [msg["message_id"]]
+            update_user(chat_id, state=state2)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ДИСПЕТЧЕР ОБНОВЛЕНИЙ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -704,15 +786,17 @@ def dispatch(update):
         handle_resume(chat_id)
     elif cmd in ("/lang", "/language", "/setlang"):
         handle_lang(chat_id)
+    elif cmd in ("/clean", "/clear"):
+        handle_clean(chat_id, message_id)
     elif cmd in ("/help", "/h"):
         user = get_user(chat_id)
         lang = get_lang(user)
-        send(chat_id, t("help", lang))
+        send_service(chat_id, t("help", lang))
     else:
         if text.startswith("/"):
             user = get_user(chat_id)
             lang = get_lang(user)
-            send(chat_id, t("unknown_command", lang) + t("help", lang))
+            send_service(chat_id, t("unknown_command", lang) + t("help", lang))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LONG POLLING ЦИКЛ
