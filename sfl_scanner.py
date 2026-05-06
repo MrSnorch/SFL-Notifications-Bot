@@ -158,6 +158,26 @@ def scan_user(user: dict):
     ready_cnt = sum(1 for e in events if e.ready_count > 0)
     log.info(f"[{username}] Готово: {ready_cnt}/{len(events)} событий")
 
+    # ── Сохраняем краткий снимок для админ-панели ─────────────────────────────
+    try:
+        last_scan = {
+            "scanned_at_ms": int(time.time() * 1000),
+            "farm_id": farm_id,
+            "events": [
+                {
+                    "name":        e.name,
+                    "emoji":       e.emoji,
+                    "count":       e.count,
+                    "ready_count": e.ready_count,
+                    "ready_at_ms": e.ready_at_ms,
+                }
+                for e in events
+            ],
+        }
+        update_user(telegram_id, last_scan=last_scan)
+    except Exception as e:
+        log.warning(f"[{username}] Не удалось сохранить last_scan: {e}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ГЛАВНЫЙ ЦИКЛ
