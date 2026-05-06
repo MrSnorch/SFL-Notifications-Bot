@@ -529,14 +529,25 @@ def scan_farm(farm: dict, track: dict,
                 pending_at_ms=pnd))
 
     # ── HONEY ─────────────────────────────────────────────────────────────────
-    # Базовая скорость: 1 единица за 24ч. Учитываем бусты из bumpkin.skills:
-    #   Hyper Bees — +0.1 к скорости за уровень (rate=1.1 → ~21.6ч вместо 24ч)
-    # Данные берём из hive["honey"]["amount"] + hive["honey"]["updatedAt"].
-    HONEY_FULL_MS     = 24 * 3_600_000
-    bumpkin_skills    = farm.get("bumpkin", {}).get("skills", {})
-    hyper_bees_lvl    = bumpkin_skills.get("Hyper Bees", 0)
-    honey_rate        = 1.0 + 0.1 * hyper_bees_lvl   # 1.1 при 1 уровне
-    honey_ms_per_unit = HONEY_FULL_MS / honey_rate    # мс на заполнение 1 ед.
+    # Скорость производства мёда определяем для каждого улья отдельно:
+    #   1. honey["speed"] — если игра сохраняет вычисленное значение напрямую
+    #   2. bumpkin.skills["Hyper Bees"] * 0.1 — известный скилл
+    #   3. farm.buffs — временные / коллектибл-бусты (ищем "honey" в labourKey)
+    # Базовая скорость: 1.0 (1 ед. за 24ч).
+    HONEY_FULL_MS  = 24 * 3_600_000
+    bumpkin_skills = farm.get("bumpkin", {}).get("skills", {})
+    hyper_bees_lvl = bumpkin_skills.get("Hyper Bees", 0)
+    base_honey_rate = 1.0 + 0.1 * hyper_bees_lvl   # из скиллов
+
+    # Бусты из farm.buffs (временные бафы, коллектиблы и т.д.)
+    buff_honey_bonus = 0.0
+    for buff in farm.get("buffs", []):
+        lk = buff.get("labourKey", "")
+        if "honey" in lk.lower():
+            pct = buff.get("boostPercent", 0)
+            if pct:
+                buff_honey_bonus += pct / 100.0
+    # Можно добавить другие известные источники (collectibles, VIP и т.д.) здесь
 
     if track.get("honey", True):
         ht = []; hive_swarm = 0
@@ -558,8 +569,17 @@ def scan_farm(farm: dict, track: dict,
             if not h_updated:
                 continue
 
+            # Приоритет: скорость из самого поля honey["speed"] (если игра
+            # её сохраняет), иначе — вычисленная из скиллов + buffs.
+            stored_speed = honey_data.get("speed")
+            if stored_speed and stored_speed > 0:
+                honey_rate = float(stored_speed)
+            else:
+                honey_rate = base_honey_rate + buff_honey_bonus
+
+            honey_ms_per_unit = HONEY_FULL_MS / honey_rate
+
             # Текущее кол-во мёда = снэпшот + выработка с момента снэпшота
-            # (с учётом ускорения от скиллов)
             current_amount = h_amount + (now_ms - h_updated) / honey_ms_per_unit
             if current_amount < 1.0:
                 ready_at = int(now_ms + (1.0 - current_amount) * honey_ms_per_unit)
