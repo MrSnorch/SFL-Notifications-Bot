@@ -730,20 +730,6 @@ def handle_clean(chat_id, command_msg_id):
     state["service_msg_ids"] = []
     update_user(chat_id, state=state)
 
-    if deleted > 0:
-        confirmation = send(chat_id, t("clean_done", lang, count=deleted))
-        # Сразу запомнить это сообщение-подтверждение
-        if confirmation and confirmation.get("message_id"):
-            state2 = (get_user(chat_id) or {}).get("state") or {}
-            state2["service_msg_ids"] = [confirmation["message_id"]]
-            update_user(chat_id, state=state2)
-    else:
-        msg = send(chat_id, t("clean_nothing", lang))
-        if msg and msg.get("message_id"):
-            state2 = (get_user(chat_id) or {}).get("state") or {}
-            state2["service_msg_ids"] = [msg["message_id"]]
-            update_user(chat_id, state=state2)
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ДИСПЕТЧЕР ОБНОВЛЕНИЙ
 # ══════════════════════════════════════════════════════════════════════════════
