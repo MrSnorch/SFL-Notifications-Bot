@@ -529,10 +529,15 @@ def scan_farm(farm: dict, track: dict,
                 pending_at_ms=pnd))
 
     # ── HONEY ─────────────────────────────────────────────────────────────────
-    # Мёд заполняется независимо: 1 единица за 24 часа, пока растёт цветок.
-    # Время готовности = now + (1.0 - текущее_кол-во) * 24h
+    # Базовая скорость: 1 единица за 24ч. Учитываем бусты из bumpkin.skills:
+    #   Hyper Bees — +0.1 к скорости за уровень (rate=1.1 → ~21.6ч вместо 24ч)
     # Данные берём из hive["honey"]["amount"] + hive["honey"]["updatedAt"].
-    HONEY_FULL_MS = 24 * 3_600_000
+    HONEY_FULL_MS     = 24 * 3_600_000
+    bumpkin_skills    = farm.get("bumpkin", {}).get("skills", {})
+    hyper_bees_lvl    = bumpkin_skills.get("Hyper Bees", 0)
+    honey_rate        = 1.0 + 0.1 * hyper_bees_lvl   # 1.1 при 1 уровне
+    honey_ms_per_unit = HONEY_FULL_MS / honey_rate    # мс на заполнение 1 ед.
+
     if track.get("honey", True):
         ht = []; hive_swarm = 0
         for hid, hive in farm.get("beehives", {}).items():
@@ -554,9 +559,10 @@ def scan_farm(farm: dict, track: dict,
                 continue
 
             # Текущее кол-во мёда = снэпшот + выработка с момента снэпшота
-            current_amount = h_amount + (now_ms - h_updated) / HONEY_FULL_MS
+            # (с учётом ускорения от скиллов)
+            current_amount = h_amount + (now_ms - h_updated) / honey_ms_per_unit
             if current_amount < 1.0:
-                ready_at = int(now_ms + (1.0 - current_amount) * HONEY_FULL_MS)
+                ready_at = int(now_ms + (1.0 - current_amount) * honey_ms_per_unit)
                 ht.append(ready_at)
 
         bee_swarm = len(farm.get("collectibles", {}).get("Bee Swarm", []))
