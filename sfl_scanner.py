@@ -165,11 +165,12 @@ def scan_user(user: dict):
             "farm_id": farm_id,
             "events": [
                 {
-                    "name":        e.name,
-                    "emoji":       e.emoji,
-                    "count":       e.count,
-                    "ready_count": e.ready_count,
-                    "ready_at_ms": e.ready_at_ms,
+                    "name":           e.name,
+                    "emoji":          e.emoji,
+                    "count":          e.count,
+                    "ready_count":    e.ready_count,
+                    "ready_at_ms":    e.ready_at_ms,
+                    "pending_at_ms":  e.pending_at_ms,
                 }
                 for e in events
             ],
