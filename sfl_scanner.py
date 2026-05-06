@@ -107,6 +107,8 @@ def scan_user(user: dict):
     try:
         farm = load_from_api(farm_id, api_key)
     except Exception as e:
+        if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
+            raise  # пробрасываем 429 — кулдаун выставляет run_loop
         log.warning(f"[{username}] Ошибка API: {e}")
         return
 
@@ -180,6 +182,11 @@ def scan_user(user: dict):
         log.warning(f"[{username}] Не удалось сохранить last_scan: {e}")
 
 
+# Кулдауны при 429: telegram_id → время до которого пропускаем пользователя
+_cooldowns: dict = {}
+COOLDOWN_429 = 300  # 5 минут при rate limit
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ГЛАВНЫЙ ЦИКЛ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -211,7 +218,22 @@ def run_loop(duration_seconds: int = 21300, interval_seconds: int = 30):
         for i, user in enumerate(users):
             if time.time() >= end_time:
                 break
-            scan_user(user)
+            telegram_id = user["telegram_id"]
+            cooldown_until = _cooldowns.get(telegram_id, 0)
+            if time.time() < cooldown_until:
+                remaining_cd = int(cooldown_until - time.time())
+                username = user.get("username") or user.get("first_name") or str(telegram_id)
+                log.info(f"[{username}] Пропуск: rate limit, ещё {remaining_cd}с кулдауна")
+                continue
+            try:
+                scan_user(user)
+            except Exception as e:
+                if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
+                    _cooldowns[telegram_id] = time.time() + COOLDOWN_429
+                    username = user.get("username") or user.get("first_name") or str(telegram_id)
+                    log.warning(f"[{username}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
+                else:
+                    raise
             if i < len(users) - 1:
                 time.sleep(3)  # пауза между пользователями чтобы не давить API
 
