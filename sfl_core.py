@@ -5,13 +5,89 @@ sfl_core.py — Общая логика сканирования SFL (без GUI
 """
 
 import json, os, time, logging
-from datetime import datetime
+from datetime import datetime, timezone as _dtz, timedelta as _td
 try:
-    from zoneinfo import ZoneInfo
-    UA_TZ = ZoneInfo("Europe/Kiev")
-except Exception:
-    from datetime import timezone as _tz, timedelta as _td
-    UA_TZ = _tz(_td(hours=3))
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    def _make_tz(name: str):
+        try:
+            return _ZoneInfo(name)
+        except Exception:
+            return _dtz(_td(hours=0))
+except ImportError:
+    def _make_tz(name: str):  # type: ignore
+        OFFSETS = {
+            "UTC": 0, "Europe/London": 0,
+            "Europe/Lisbon": 0, "Atlantic/Azores": -1,
+            "Europe/Paris": 1, "Europe/Berlin": 1, "Europe/Warsaw": 1,
+            "Europe/Kiev": 2, "Europe/Bucharest": 2,
+            "Europe/Moscow": 3, "Europe/Istanbul": 3,
+            "Asia/Dubai": 4, "Asia/Baku": 4,
+            "Asia/Tashkent": 5, "Asia/Yekaterinburg": 5,
+            "Asia/Kolkata": 5,  # +5:30 approx
+            "Asia/Dhaka": 6, "Asia/Almaty": 6,
+            "Asia/Bangkok": 7, "Asia/Novosibirsk": 7,
+            "Asia/Shanghai": 8, "Asia/Singapore": 8,
+            "Asia/Tokyo": 9, "Asia/Seoul": 9,
+            "Australia/Sydney": 10,
+            "Pacific/Auckland": 12,
+            "America/New_York": -5, "America/Chicago": -6,
+            "America/Denver": -7, "America/Los_Angeles": -8,
+        }
+        return _dtz(_td(hours=OFFSETS.get(name, 0)))
+
+# Глобальный дефолт (используется только если tz не передан явно)
+UA_TZ = _make_tz("Europe/Kiev")
+
+def get_tz(tz_name: str | None):
+    """Возвращает объект timezone по имени из TIMEZONES."""
+    if not tz_name:
+        return UA_TZ
+    return _make_tz(tz_name)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Список часовых поясов для выбора в боте
+# Формат: (tz_name, emoji_flag, label, utc_offset_label)
+# ──────────────────────────────────────────────────────────────────────────────
+TIMEZONES: list[tuple[str, str, str]] = [
+    ("Europe/London",      "🇬🇧", "Лондон",          "UTC+0/+1"),
+    ("Europe/Paris",       "🇫🇷", "Париж / Берлин",  "UTC+1/+2"),
+    ("Europe/Warsaw",      "🇵🇱", "Варшава",          "UTC+1/+2"),
+    ("Europe/Kiev",        "🇺🇦", "Киев",             "UTC+2/+3"),
+    ("Europe/Bucharest",   "🇷🇴", "Бухарест",         "UTC+2/+3"),
+    ("Europe/Moscow",      "🇷🇺", "Москва",           "UTC+3"),
+    ("Europe/Istanbul",    "🇹🇷", "Стамбул",          "UTC+3"),
+    ("Asia/Dubai",         "🇦🇪", "Дубай",            "UTC+4"),
+    ("Asia/Baku",          "🇦🇿", "Баку",             "UTC+4"),
+    ("Asia/Tashkent",      "🇺🇿", "Ташкент",          "UTC+5"),
+    ("Asia/Kolkata",       "🇮🇳", "Индия",            "UTC+5:30"),
+    ("Asia/Dhaka",         "🇧🇩", "Дакка",            "UTC+6"),
+    ("Asia/Almaty",        "🇰🇿", "Алматы",           "UTC+6"),
+    ("Asia/Bangkok",       "🇹🇭", "Бангкок",          "UTC+7"),
+    ("Asia/Novosibirsk",   "🇷🇺", "Новосибирск",      "UTC+7"),
+    ("Asia/Shanghai",      "🇨🇳", "Пекин / Шанхай",  "UTC+8"),
+    ("Asia/Singapore",     "🇸🇬", "Сингапур",         "UTC+8"),
+    ("Asia/Tokyo",         "🇯🇵", "Токио",            "UTC+9"),
+    ("Asia/Seoul",         "🇰🇷", "Сеул",             "UTC+9"),
+    ("Australia/Sydney",   "🇦🇺", "Сидней",           "UTC+10/+11"),
+    ("Pacific/Auckland",   "🇳🇿", "Окленд",           "UTC+12/+13"),
+    ("America/New_York",   "🇺🇸", "Нью-Йорк",        "UTC-5/-4"),
+    ("America/Chicago",    "🇺🇸", "Чикаго",           "UTC-6/-5"),
+    ("America/Denver",     "🇺🇸", "Денвер",           "UTC-7/-6"),
+    ("America/Los_Angeles","🇺🇸", "Лос-Анджелес",    "UTC-8/-7"),
+    ("UTC",                "🌐", "UTC",               "UTC+0"),
+]
+
+# Быстрый поиск по tz_name
+_TZ_MAP = {tz: (flag, label, utc) for tz, flag, label, utc in TIMEZONES}
+
+def tz_display_name(tz_name: str | None) -> str:
+    """Возвращает читаемое название + UTC-смещение для отображения."""
+    if not tz_name:
+        tz_name = "Europe/Kiev"
+    if tz_name in _TZ_MAP:
+        flag, label, utc = _TZ_MAP[tz_name]
+        return f"{flag} {label} ({utc})"
+    return tz_name
 
 try:
     import requests
@@ -268,9 +344,9 @@ class Event:
             return f"{d}д {h:02d}:{m:02d}:{sc:02d}"
         return f"{h:02d}:{m:02d}:{sc:02d}"
 
-    def fmt_pending_ready_time(self):
+    def fmt_pending_ready_time(self, tz=None):
         return datetime.fromtimestamp(
-            self.pending_at_ms / 1000, tz=UA_TZ).strftime("%H:%M")
+            self.pending_at_ms / 1000, tz=tz or UA_TZ).strftime("%H:%M")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # API
@@ -526,8 +602,10 @@ def _fmt_ms_human(ms: int) -> str:
     if m > 0: return f"через {m}м {sc:02d}с"
     return f"через {sc}с"
 
-def format_status_message(events: list[Event], farm_id: str) -> str:
+def format_status_message(events: list[Event], farm_id: str,
+                           tz=None) -> str:
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
+    _tz = tz or UA_TZ
     if not events:
         return f"🌻 Ферма <b>{farm_id}</b>\n\nНет отслеживаемых ресурсов."
 
@@ -548,7 +626,7 @@ def format_status_message(events: list[Event], farm_id: str) -> str:
                 swarm_extra = f" (Swarm x{m.group(1)})" if m else ""
             lines.append(
                 f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
-                f" — {_fmt_ms_human(ms_left)} — {e.fmt_pending_ready_time()}"
+                f" — {_fmt_ms_human(ms_left)} — {e.fmt_pending_ready_time(_tz)}"
             )
 
     ready_now = [e for e in events if e.ready_count > 0]
@@ -558,7 +636,7 @@ def format_status_message(events: list[Event], farm_id: str) -> str:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
             lines.append(f"  {e.emoji} {e.name}{cnt}")
 
-    ts = datetime.now(tz=UA_TZ).strftime("%d.%m %H:%M")
+    ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
     lines.append(f"\n<i>Обновлено: {ts}</i>")
     return "\n".join(lines)
 

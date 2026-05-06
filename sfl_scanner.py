@@ -31,6 +31,7 @@ from sfl_core import (
     tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
     tg_unpin_message, Event,
     discover_dynamic_resources, merge_discovered,
+    get_tz,
 )
 from sfl_supabase import (
     get_all_active_users, load_state, save_state, update_user,
@@ -137,7 +138,8 @@ def scan_user(user: dict):
     alerts_state  = state.get("ready_alerts", {})
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
-    status_text           = format_status_message(events, farm_id)
+    user_tz     = get_tz(state.get("timezone"))
+    status_text = format_status_message(events, farm_id, tz=user_tz)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id)
     state["status_msg_id"] = new_msg_id
 
