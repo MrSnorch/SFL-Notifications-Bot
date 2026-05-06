@@ -92,6 +92,128 @@ SALT_RESPAWN_MS     = 8  * 3_600_000
 SUNSTONE_RESPAWN_MS = 72 * 3_600_000
 MUSH_SPAWN_MS       = 16 * 3_600_000
 
+# ══════════════════════════════════════════════════════════════════════════════
+# АВТОДЕТЕКТ ДИНАМИЧЕСКИХ РЕСУРСОВ
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Ключи, которые уже обрабатываются выделенным кодом — не трогать при автодетекте
+KNOWN_RESOURCE_KEYS = {
+    "crops", "trees", "stones", "iron", "gold", "crimstones",
+    "oilReserves", "sunstones", "fruitPatches", "flowers",
+    "beehives", "mushrooms", "henHouse", "barn", "saltFarm",
+    # нересурсные поля верхнего уровня
+    "coins", "balance", "previousBalance", "inventory", "previousInventory",
+    "shipments", "gems", "flower", "choreBoard", "bank", "bumpkin",
+    "wardrobe", "previousWardrobe", "home", "interior", "island",
+    "farmHands", "greenhouse", "calendar", "vip", "createdAt", "stock",
+    "trades", "expandedAt", "buildings", "collectibles", "pumpkinPlaza",
+    "megastore", "dailyRewards", "buffs", "floatingIsland", "farmActivity",
+    "milestones", "fishing", "crabTraps", "chores", "kingdomChores",
+    "conversations", "mailbox", "socialTasks",
+}
+
+# Поля-таймеры (в порядке приоритета)
+_TIMER_FIELDS = ["readyAt", "harvestedAt", "minedAt", "collectedAt",
+                 "attachedUntil", "finishedAt", "completedAt"]
+
+# Эмодзи по ключевым словам в названии ресурса
+_EMOJI_HINTS = {
+    "lava": "🌋", "pit": "🕳️", "forge": "🔥", "volcano": "🌋",
+    "well": "💧", "lake": "🏞️", "pond": "🐟", "fish": "🐟",
+    "mine": "⛏️", "rock": "🪨", "gem": "💎", "crystal": "🔮",
+    "plant": "🌿", "tree": "🌳", "flower": "🌸", "crop": "🌾",
+    "chest": "📦", "box": "📦", "crate": "🗃️",
+    "portal": "🔮", "ruin": "🏚️", "quest": "📜", "task": "📋",
+    "bee": "🐝", "hive": "🍯", "honey": "🍯",
+    "animal": "🐾", "cow": "🐄", "chicken": "🐔",
+    "trap": "🪤", "crab": "🦀",
+}
+
+
+def _guess_emoji(key: str) -> str:
+    kl = key.lower()
+    for word, em in _EMOJI_HINTS.items():
+        if word in kl:
+            return em
+    return "⏰"
+
+
+def _key_to_label(key: str) -> str:
+    """lavaPits → Lava Pits"""
+    import re
+    s = re.sub(r"([A-Z])", r" \1", key).strip()
+    return s.title()
+
+
+def discover_dynamic_resources(farm: dict) -> list[dict]:
+    """
+    Сканирует ответ API и находит UUID-коллекции с таймерами,
+    которые НЕ обрабатываются выделенным кодом.
+
+    Возвращает список словарей:
+        {"key": "lavaPits", "label": "Lava Pits", "emoji": "🌋",
+         "timer_field": "readyAt"}
+    """
+    found = []
+    for key, val in farm.items():
+        if key in KNOWN_RESOURCE_KEYS:
+            continue
+        if not isinstance(val, dict) or not val:
+            continue
+        # Значения должны быть словарями (UUID-keyed коллекция)
+        sample = next(iter(val.values()), None)
+        if not isinstance(sample, dict):
+            continue
+        # Ищем таймерное поле
+        for tf in _TIMER_FIELDS:
+            if tf in sample:
+                found.append({
+                    "key":         key,
+                    "label":       _key_to_label(key),
+                    "emoji":       _guess_emoji(key),
+                    "timer_field": tf,
+                })
+                break
+    return found
+
+
+def merge_discovered(existing: list[dict], new_found: list[dict]) -> list[dict]:
+    """
+    Объединяет ранее найденные ресурсы с новыми.
+    Добавляет только те, которых ещё нет, сохраняя порядок.
+    """
+    existing_keys = {d["key"] for d in existing}
+    merged = list(existing)
+    for item in new_found:
+        if item["key"] not in existing_keys:
+            merged.append(item)
+    return merged
+
+
+def scan_dynamic_resource(farm: dict, key: str, timer_field: str,
+                           label: str, emoji: str) -> "Event | None":
+    """
+    Универсальный сканер для UUID-коллекций с readyAt-подобным таймером.
+    Работает для любого нового типа ресурса без отдельного кода.
+    """
+    times = []
+    now_ms = int(time.time() * 1000)
+    for _, item in farm.get(key, {}).items():
+        if not isinstance(item, dict):
+            continue
+        t = _fix_ts(item.get(timer_field, 0))
+        if t:
+            times.append(t)
+    if not times:
+        return None
+    times.sort()
+    rc = sum(1 for t in times if t <= now_ms)
+    pnd = times[rc] if rc < len(times) else times[-1]
+    return Event(label, emoji, times[0], len(times), rc,
+                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} шт.",
+                 pending_at_ms=pnd)
+
+
 DEFAULT_TRACKING = {
     "crops": True, "trees": True, "stones": True, "iron": True,
     "gold": True, "crimstones": False, "oil": False, "salt": True,
@@ -174,7 +296,8 @@ def _fix_ts(ts):
         return ts * 1000
     return ts
 
-def scan_farm(farm: dict, track: dict) -> list[Event]:
+def scan_farm(farm: dict, track: dict,
+              dynamic_resources: list[dict] | None = None) -> list[Event]:
     events = []
     now_ms = int(time.time() * 1000)
 
@@ -375,6 +498,16 @@ def scan_farm(farm: dict, track: dict) -> list[Event]:
             emoji = "🐄" if "Cow" in atype else "🐔"
             events.append(Event(atype, emoji, first, len(times), rc,
                 f"{rc}/{len(times)} проснулось" if rc else f"{len(times)} животных"))
+
+    # ── ДИНАМИЧЕСКИЕ РЕСУРСЫ (автодетект) ────────────────────────────────────
+    for dr in (dynamic_resources or []):
+        key = dr["key"]
+        if not track.get(key, False):
+            continue
+        ev = scan_dynamic_resource(farm, key, dr["timer_field"],
+                                    dr["label"], dr["emoji"])
+        if ev:
+            events.append(ev)
 
     events.sort(key=lambda e: e.ready_at_ms)
     return events

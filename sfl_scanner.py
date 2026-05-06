@@ -29,9 +29,10 @@ log = logging.getLogger("SFL")
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
     tg_send, tg_edit, tg_delete, tg_upsert_status, Event,
+    discover_dynamic_resources, merge_discovered,
 )
 from sfl_supabase import (
-    get_all_active_users, load_state, save_state,
+    get_all_active_users, load_state, save_state, update_user,
 )
 
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -102,15 +103,35 @@ def scan_user(user: dict):
     log.info(f"[{username}] Сканирование фермы {farm_id}...")
 
     try:
-        farm   = load_from_api(farm_id, api_key)
-        events = scan_farm(farm, tracking)
+        farm = load_from_api(farm_id, api_key)
     except Exception as e:
         log.warning(f"[{username}] Ошибка API: {e}")
-        # Уведомляем пользователя если ошибка повторяется
-        # (не шлём каждый раз чтобы не спамить)
         return
 
-    state        = load_state(telegram_id)
+    # ── Автодетект новых ресурсов ─────────────────────────────────────────────
+    state             = load_state(telegram_id)
+    existing          = state.get("discovered_resources", [])
+    newly_found       = discover_dynamic_resources(farm)
+    dynamic_resources = merge_discovered(existing, newly_found)
+
+    if dynamic_resources != existing:
+        state["discovered_resources"] = dynamic_resources
+        new_keys = {d["key"] for d in dynamic_resources} - {d["key"] for d in existing}
+        if new_keys:
+            labels = ", ".join(
+                d["label"] for d in dynamic_resources if d["key"] in new_keys
+            )
+            log.info(f"[{username}] Новые ресурсы: {labels}")
+            tg_send(TG_TOKEN, telegram_id,
+                    f"🔍 <b>Найдены новые ресурсы:</b> {labels}\n"
+                    f"Включи их в /settings если нужно.")
+
+    try:
+        events = scan_farm(farm, tracking, dynamic_resources)
+    except Exception as e:
+        log.warning(f"[{username}] Ошибка сканирования: {e}")
+        return
+
     status_msg_id = state.get("status_msg_id")
     alerts_state  = state.get("ready_alerts", {})
 

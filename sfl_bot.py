@@ -36,6 +36,7 @@ log = logging.getLogger("SFL_BOT")
 from sfl_core import (
     scan_farm, load_from_api, format_status_message,
     DEFAULT_TRACKING, TRACK_LABELS,
+    discover_dynamic_resources, merge_discovered,
 )
 from sfl_supabase import (
     get_or_create_user, get_user, update_user,
@@ -98,11 +99,23 @@ def delete_msg(chat_id: int, message_id: int):
 # КЛАВИАТУРЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def settings_keyboard(tracking: dict) -> dict:
-    """Inline-клавиатура для /settings — один ряд на каждый ресурс."""
+def settings_keyboard(tracking: dict,
+                       dynamic_resources: list[dict] | None = None) -> dict:
+    """Inline-клавиатура для /settings — статические + динамические ресурсы."""
     buttons = []
+    # Статические (известные) ресурсы
     for key, label in TRACK_LABELS:
         enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
+        icon = "✅" if enabled else "❌"
+        buttons.append([{
+            "text": f"{icon} {label}",
+            "callback_data": f"toggle:{key}",
+        }])
+    # Динамические ресурсы (найденные в ответе API конкретного пользователя)
+    for dr in (dynamic_resources or []):
+        key   = dr["key"]
+        label = f"{dr['emoji']} {dr['label']}"
+        enabled = tracking.get(key, False)
         icon = "✅" if enabled else "❌"
         buttons.append([{
             "text": f"{icon} {label}",
@@ -224,9 +237,14 @@ def handle_settings(chat_id: int):
         send(chat_id, "❌ Сначала зарегистрируйся: /start")
         return
 
-    tracking = user.get("tracking") or DEFAULT_TRACKING
+    tracking          = user.get("tracking") or DEFAULT_TRACKING
+    state             = user.get("state") or {}
+    dynamic_resources = state.get("discovered_resources", [])
+
     text = "⚙️ <b>Настройки отслеживания</b>\n\nВыбери что отслеживать:"
-    send(chat_id, text, reply_markup=settings_keyboard(tracking))
+    if dynamic_resources:
+        text += f"\n\n🔍 <i>Найдено новых ресурсов: {len(dynamic_resources)}</i>"
+    send(chat_id, text, reply_markup=settings_keyboard(tracking, dynamic_resources))
 
 
 def handle_status(chat_id: int):
@@ -243,8 +261,26 @@ def handle_status(chat_id: int):
     try:
         farm     = load_from_api(user["farm_id"], user["api_key"])
         tracking = user.get("tracking") or DEFAULT_TRACKING
-        events   = scan_farm(farm, tracking)
-        text     = format_status_message(events, user["farm_id"])
+        state    = user.get("state") or {}
+
+        # ── Автодетект новых ресурсов ─────────────────────────────────────────
+        newly_found       = discover_dynamic_resources(farm)
+        existing          = state.get("discovered_resources", [])
+        dynamic_resources = merge_discovered(existing, newly_found)
+
+        if dynamic_resources != existing:
+            state["discovered_resources"] = dynamic_resources
+            update_user(chat_id, state=state)
+            new_keys = {d["key"] for d in dynamic_resources} - {d["key"] for d in existing}
+            if new_keys:
+                labels = ", ".join(d["label"] for d in dynamic_resources
+                                   if d["key"] in new_keys)
+                send(chat_id,
+                     f"🔍 <b>Найдены новые ресурсы для отслеживания:</b> {labels}\n"
+                     f"Включи их в /settings если нужно.")
+
+        events = scan_farm(farm, tracking, dynamic_resources)
+        text   = format_status_message(events, user["farm_id"])
     except Exception as e:
         text = f"❌ Ошибка при загрузке фермы:\n<code>{e}</code>"
 
@@ -296,30 +332,39 @@ def handle_callback(callback_query: dict):
         answer_callback(cq_id, "Сначала /start")
         return
 
-    tracking = dict(user.get("tracking") or DEFAULT_TRACKING)
+    tracking          = dict(user.get("tracking") or DEFAULT_TRACKING)
+    state             = user.get("state") or {}
+    dynamic_resources = state.get("discovered_resources", [])
+    dynamic_keys      = {d["key"] for d in dynamic_resources}
 
     if data.startswith("toggle:"):
         key = data.split(":", 1)[1]
-        if key in tracking:
-            tracking[key] = not tracking[key]
+        # Разрешаем тогл и для статических, и для динамических ресурсов
+        if key in tracking or key in dynamic_keys:
+            tracking[key] = not tracking.get(key, False)
             update_user(chat_id, tracking=tracking)
             answer_callback(cq_id)
-            # Обновляем клавиатуру
             edit_text(
                 chat_id, msg_id,
                 "⚙️ <b>Настройки отслеживания</b>\n\nВыбери что отслеживать:",
-                reply_markup=settings_keyboard(tracking),
+                reply_markup=settings_keyboard(tracking, dynamic_resources),
             )
+        else:
+            answer_callback(cq_id, "Неизвестный ресурс")
 
     elif data == "settings:close":
         answer_callback(cq_id, "✅ Сохранено!")
+        # Итоговый список: статические + динамические
+        lines = [
+            f"{'✅' if tracking.get(k) else '❌'} {label}"
+            for k, label in TRACK_LABELS
+        ]
+        for dr in dynamic_resources:
+            icon = "✅" if tracking.get(dr["key"]) else "❌"
+            lines.append(f"{icon} {dr['emoji']} {dr['label']}")
         edit_text(
             chat_id, msg_id,
-            "✅ <b>Настройки сохранены!</b>\n\n"
-            + "\n".join(
-                f"{'✅' if tracking.get(k) else '❌'} {label}"
-                for k, label in TRACK_LABELS
-            )
+            "✅ <b>Настройки сохранены!</b>\n\n" + "\n".join(lines)
         )
 
 # ══════════════════════════════════════════════════════════════════════════════
