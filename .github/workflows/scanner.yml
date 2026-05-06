@@ -8,6 +8,10 @@ on:
   # Ручной запуск для теста
   workflow_dispatch:
 
+concurrency:
+  group: sfl-scanner
+  cancel-in-progress: true  # При новом запуске — убить предыдущий
+
 permissions:
   contents: read
 

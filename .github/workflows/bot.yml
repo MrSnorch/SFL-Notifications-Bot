@@ -8,6 +8,10 @@ on:
   # Ручной запуск
   workflow_dispatch:
 
+concurrency:
+  group: sfl-bot
+  cancel-in-progress: true  # При новом запуске — убить предыдущий
+
 permissions:
   contents: read
 
