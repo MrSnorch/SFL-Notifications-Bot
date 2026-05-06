@@ -1,24 +1,24 @@
 name: SFL Scanner
 
 on:
-  # Запускается каждые 6 часов автоматически
-  # Внутри скрипт крутится 5ч 55м, потом следующий job подхватывает
+  # Страховочный cron — запустит если self-restart по какой-то причине не сработал
   schedule:
     - cron: '0 */6 * * *'
-  # Ручной запуск для теста
+  # Self-restart и ручной запуск
   workflow_dispatch:
 
 concurrency:
   group: sfl-scanner
-  cancel-in-progress: true  # При новом запуске — убить предыдущий
+  cancel-in-progress: true  # Новый запуск отменяет предыдущий (не даёт дублям)
 
 permissions:
   contents: read
+  actions: write   # Нужно для self-restart через API
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 370   # 6ч 10м — чуть больше чем duration скрипта
+    timeout-minutes: 355   # 5ч 55м — чуть меньше чем duration скрипта
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -39,4 +39,18 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
         run: |
-          python sfl_scanner.py --duration 21300 --interval 30
+          python sfl_scanner.py --duration 20700 --interval 30
+          # 20700с = 5ч 45м — оставляем ~10 мин на restart step
+
+      - name: Self-restart — trigger next run
+        if: always()   # Запускаем даже если предыдущий шаг упал
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\"}" \
+            && echo "✅ Next run triggered" \
+            || echo "⚠️ Failed to trigger next run (cron will catch it)"

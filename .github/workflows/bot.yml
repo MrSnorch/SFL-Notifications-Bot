@@ -1,24 +1,24 @@
 name: SFL Bot
 
 on:
-  # Перезапускается каждые 6 часов
-  # Бот крутится 5ч 50м, потом следующий job стартует
+  # Страховочный cron — запустит если self-restart по какой-то причине не сработал
   schedule:
-    - cron: '30 */6 * * *'   # Со смещением 30 мин от сканера чтобы не конкурировали
-  # Ручной запуск
+    - cron: '30 */6 * * *'   # Смещение 30 мин от сканера
+  # Self-restart и ручной запуск
   workflow_dispatch:
 
 concurrency:
   group: sfl-bot
-  cancel-in-progress: true  # При новом запуске — убить предыдущий
+  cancel-in-progress: true  # Новый запуск отменяет предыдущий
 
 permissions:
   contents: read
+  actions: write   # Нужно для self-restart через API
 
 jobs:
   bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 365   # 6ч 5м
+    timeout-minutes: 355   # 5ч 55м
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -39,4 +39,18 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
         run: |
-          python sfl_bot.py --duration 21000
+          python sfl_bot.py --duration 20700
+          # 20700с = 5ч 45м — оставляем ~10 мин на restart step
+
+      - name: Self-restart — trigger next run
+        if: always()   # Запускаем даже если предыдущий шаг упал
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/bot.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\"}" \
+            && echo "✅ Next run triggered" \
+            || echo "⚠️ Failed to trigger next run (cron will catch it)"
