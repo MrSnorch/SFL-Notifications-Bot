@@ -390,6 +390,8 @@ def load_from_api(farm_id: str, api_key: str, retries: int = 3, timeout: int = 3
                 headers={"x-api-key": api_key},
                 timeout=timeout,
             )
+            if r.status_code == 429:
+                r.raise_for_status()  # пробрасываем 429 сразу — не ретраим
             break
         except requests.exceptions.Timeout as e:
             last_exc = e
