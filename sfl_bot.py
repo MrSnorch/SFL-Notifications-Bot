@@ -711,10 +711,14 @@ def handle_callback(callback_query):
             tracking[key] = not tracking.get(key, False)
             update_user(chat_id, tracking=tracking)
             answer_callback(cq_id)
+            _repeat       = state.get("repeat", {})
+            _repeat_count = int(_repeat.get("count", 1))
+            _repeat_intv  = int(_repeat.get("interval_min", 10))
             edit_text(
                 chat_id, msg_id,
                 t("settings_title", lang),
-                reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang),
+                reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                               _repeat_count, _repeat_intv),
             )
         else:
             answer_callback(cq_id, t("settings_unknown_resource", lang))
