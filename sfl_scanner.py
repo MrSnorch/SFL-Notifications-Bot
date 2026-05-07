@@ -183,8 +183,11 @@ def scan_user(user: dict) -> "int | None":
     except Exception as e:
         log.warning(f"[{username}] Не удалось сохранить last_scan: {e}")
 
-    # Возвращаем время ближайшего ещё не готового события (для предсказания)
-    not_ready = [e for e in events if e.ready_count < e.count]
+    # Возвращаем время ближайшего ещё не готового события (для предсказания).
+    # Берём только будущие timestamps — прошедшие означают что событие уже готово
+    # но не собрано, уведомление уже отправлено, незачем сканировать снова.
+    now_ms    = int(time.time() * 1000)
+    not_ready = [e for e in events if e.ready_count < e.count and e.ready_at_ms > now_ms]
     return min((e.ready_at_ms for e in not_ready), default=None)
 
 
@@ -253,7 +256,9 @@ def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
                     next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
                     log.info(f"[{username}] Следующий скан запланирован на {next_t}")
                 else:
-                    _next_scan_at.pop(telegram_id, None)
+                    # Всё готово — проверяем раз в 5 минут
+                    _next_scan_at[telegram_id] = time.time() + 300
+                    log.info(f"[{username}] Всё готово, следующий скан через 5 мин")
             except Exception as e:
                 if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
                     _cooldowns[telegram_id] = time.time() + COOLDOWN_429
@@ -324,8 +329,13 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
             next_ready_ms = scan_user(user)
             if next_ready_ms:
                 next_scan_at = next_ready_ms / 1000
+                next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
+                log.info(f"[{telegram_id}] Следующий скан в {next_t}")
             else:
-                next_scan_at = time.time() + request_interval
+                # Всё готово или нет будущих событий — сканируем раз в 5 минут,
+                # не каждые 15с (юзер уже получил уведомления, пусть собирает)
+                next_scan_at = time.time() + 300
+                log.info(f"[{telegram_id}] Всё готово, следующий скан через 5 мин")
         except Exception as e:
             if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
                 log.warning(f"[{telegram_id}] 429 Rate limit на этом IP — выходим для смены runner'а")
