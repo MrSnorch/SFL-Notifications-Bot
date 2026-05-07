@@ -297,11 +297,9 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
         log.error("TELEGRAM_BOT_TOKEN не задан!")
         sys.exit(1)
 
-    end_time       = time.time() + duration_seconds
-    next_scan_at   = 0.0   # unix-секунды когда делать следующий запрос
-    cooldown_until = 0.0
+    end_time = time.time() + duration_seconds
 
-    log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s")
+    log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s, interval={request_interval}s")
 
     while time.time() < end_time:
         # Перечитываем юзера — tracking/настройки могут меняться через бота
@@ -310,41 +308,28 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
             log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
             break
 
-        now = time.time()
-
-        if now < cooldown_until:
-            wait = min(cooldown_until - now, end_time - now)
-            log.info(f"[{telegram_id}] Rate limit, ждём {int(wait)}с...")
-            time.sleep(max(1.0, wait))
-            continue
-
-        if now < next_scan_at:
-            next_t = datetime.fromtimestamp(next_scan_at).strftime("%H:%M:%S")
-            wait   = min(next_scan_at - now, end_time - now)
-            log.info(f"[{telegram_id}] Следующее событие в {next_t}, ждём {int(wait)}с...")
-            time.sleep(max(1.0, wait))
-            continue
-
         try:
             next_ready_ms = scan_user(user)
-            if next_ready_ms:
-                next_scan_at = next_ready_ms / 1000
-                next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
-                log.info(f"[{telegram_id}] Следующий скан в {next_t}")
-            else:
-                # Всё готово или нет будущих событий — сканируем раз в 5 минут,
-                # не каждые 15с (юзер уже получил уведомления, пусть собирает)
-                next_scan_at = time.time() + 300
-                log.info(f"[{telegram_id}] Всё готово, следующий скан через 5 мин")
         except Exception as e:
             if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
                 log.warning(f"[{telegram_id}] 429 Rate limit на этом IP — выходим для смены runner'а")
                 sys.exit(2)  # Код 2 = rate limited, нужен новый IP
             else:
                 log.warning(f"[{telegram_id}] Ошибка: {e}")
-                next_scan_at = time.time() + request_interval
+            next_ready_ms = None
 
-        sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
+        # Спим request_interval секунд, но просыпаемся раньше если событие
+        # наступает до следующего планового скана — уведомление придёт точно в срок
+        now = time.time()
+        sleep_sec = request_interval
+        if next_ready_ms:
+            secs_until_event = (next_ready_ms / 1000) - now
+            if 0 < secs_until_event < request_interval:
+                sleep_sec = secs_until_event
+                next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
+                log.info(f"[{telegram_id}] Событие в {next_t} — просыпаемся раньше через {int(sleep_sec)}с")
+
+        sleep_sec = min(sleep_sec, max(0.0, end_time - now))
         if sleep_sec > 0:
             time.sleep(sleep_sec)
 
