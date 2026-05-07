@@ -1,15 +1,12 @@
 name: SFL Scanner Matrix
 
-# Запускает каждого пользователя на отдельном runner (отдельный IP).
-# Помогает обойти IP-based rate limiting SFL API.
-#
-# Архитектура:
-#   prepare → получает список активных telegram_id из Supabase
-#   scan    → matrix job, по одному на каждый аккаунт, разные runner'ы = разные IP
+# Каждый пользователь получает свой runner (= свой IP) на ~5ч45м.
+# В конце restart пересобирает матрикс — подхватывает новых/удалённых юзеров.
+# Cron — только страховка если self-restart не сработал.
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # Каждые 5 минут
+    - cron: '0 */6 * * *'   # Страховочный cron раз в 6ч
   workflow_dispatch:
 
 concurrency:
@@ -18,10 +15,10 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write   # Нужно для self-restart в restart job
+  actions: write
 
 jobs:
-  # ── Шаг 1: получаем список пользователей ──────────────────────────────────
+  # ── Шаг 1: получаем актуальный список пользователей ───────────────────────
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -40,21 +37,20 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             | python3 -c "import sys,json; ids=[str(u['telegram_id']) for u in json.load(sys.stdin)]; print(json.dumps(ids))")
 
-          echo "matrix={\"telegram_id\":${USERS}}" >> $GITHUB_OUTPUT
-
           COUNT=$(echo "$USERS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          echo "matrix={\"telegram_id\":${USERS}}" >> $GITHUB_OUTPUT
           echo "has_users=$([ $COUNT -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "Активных пользователей: $COUNT"
 
-  # ── Шаг 2: сканируем каждого на своём runner ──────────────────────────────
+  # ── Шаг 2: каждый юзер крутит свой цикл ~5ч45м на отдельном runner ────────
   scan:
     needs: prepare
     if: needs.prepare.outputs.has_users == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
-      fail-fast: false   # Падение одного job не останавливает остальные
-    timeout-minutes: 6
+      fail-fast: false
+    timeout-minutes: 355   # 5ч 55м — как в оригинальном scanner.yml
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -69,22 +65,22 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Scan user ${{ matrix.telegram_id }}
+      - name: Run loop for user ${{ matrix.telegram_id }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
-        run: python sfl_scanner.py --user ${{ matrix.telegram_id }}
+        run: |
+          python sfl_scanner.py \
+            --user ${{ matrix.telegram_id }} \
+            --duration 20700 \
+            --interval 15
 
-  # ── Шаг 3: self-restart — как в оригинальном scanner.yml ──────────────────
-  # Запускается после того как все scan-джобы завершились.
-  # Это обеспечивает непрерывную работу — cron остаётся только страховкой.
+  # ── Шаг 3: пересобираем матрикс (подхватит новых юзеров) ──────────────────
   restart:
     needs: scan
-    if: always()   # Даже если отдельные scan-джобы упали
+    if: always()
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     steps:
       - name: Trigger next matrix run
         env:
@@ -95,5 +91,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
             -d "{\"ref\":\"${{ github.ref_name }}\"}" \
-            && echo "✅ Next matrix run triggered" \
-            || echo "⚠️ Failed to trigger (cron will catch it)"
+            && echo "✅ Next run triggered" \
+            || echo "⚠️ Failed (cron will catch it)"
