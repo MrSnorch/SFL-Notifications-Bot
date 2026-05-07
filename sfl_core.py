@@ -781,7 +781,7 @@ def _i18n(key: str, lang: str, **kwargs) -> str:
 def _fmt_ms_human(ms: int, lang: str = "ru") -> str:
     if ms <= 0:
         return _i18n("now", lang)
-    s = ms // 1000; h, rem = divmod(s, 3600); m, sc = divmod(rem, 60)
+    s = int(ms) // 1000; h, rem = divmod(s, 3600); m, sc = divmod(rem, 60)
     if h >= 24:
         d = h // 24; h = h % 24
         return _i18n("in_dhms", lang, d=d, h=h, m=m, s=sc)
