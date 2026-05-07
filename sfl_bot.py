@@ -212,6 +212,31 @@ STRINGS = {
         "en": "Unknown resource",
         "uk": "Невідомий ресурс",
     },
+    "repeat_count_label": {
+        "ru": "🔁 Повторов:",
+        "en": "🔁 Repeats:",
+        "uk": "🔁 Повторів:",
+    },
+    "repeat_interval_label": {
+        "ru": "⏳ Интервал:",
+        "en": "⏳ Interval:",
+        "uk": "⏳ Інтервал:",
+    },
+    "repeat_count_toast": {
+        "ru": "🔔 Повторов: {n}×",
+        "en": "🔔 Repeats: {n}×",
+        "uk": "🔔 Повторів: {n}×",
+    },
+    "repeat_interval_toast": {
+        "ru": "⏱ Интервал: {m}м",
+        "en": "⏱ Interval: {m}m",
+        "uk": "⏱ Інтервал: {m}хв",
+    },
+    "repeat_summary": {
+        "ru": "🔁 Повторов: {count}× / каждые {interval}м",
+        "en": "🔁 Repeats: {count}× / every {interval}m",
+        "uk": "🔁 Повторів: {count}× / кожні {interval}хв",
+    },
     "status_no_farm": {
         "ru": "❌ Ферма не настроена.\nИспользуй /setfarm и /setkey",
         "en": "❌ Farm is not set up.\nUse /setfarm and /setkey",
@@ -426,7 +451,8 @@ def tz_keyboard(current_tz, lang):
     return {"inline_keyboard": buttons}
 
 
-def settings_keyboard(tracking, dynamic_resources=None, current_tz=None, lang=DEFAULT_LANG):
+def settings_keyboard(tracking, dynamic_resources=None, current_tz=None, lang=DEFAULT_LANG,
+                      repeat_count=3, repeat_interval_min=10):
     """Inline-клавиатура для /settings."""
     buttons = []
     for key, label in TRACK_LABELS:
@@ -443,6 +469,17 @@ def settings_keyboard(tracking, dynamic_resources=None, current_tz=None, lang=DE
         "text": t("tz_btn_label", lang, tz=tz_label),
         "callback_data": "tz_menu",
     }])
+    # Повтор уведомлений
+    count_row = [
+        {"text": f"{'🔔' if n == repeat_count else str(n)}×", "callback_data": f"repeat_count:{n}"}
+        for n in range(1, 6)
+    ]
+    buttons.append([{"text": t("repeat_count_label", lang), "callback_data": "noop"}] + count_row)
+    interval_row = [
+        {"text": f"{'⏱' if m == repeat_interval_min else ''}{m}{'м' if lang != 'en' else 'm'}", "callback_data": f"repeat_interval:{m}"}
+        for m in (5, 10, 15, 30)
+    ]
+    buttons.append([{"text": t("repeat_interval_label", lang), "callback_data": "noop"}] + interval_row)
     buttons.append([{
         "text": t("settings_btn_save", lang),
         "callback_data": "settings:close",
@@ -516,11 +553,15 @@ def handle_settings(chat_id):
     state             = user.get("state") or {}
     dynamic_resources = state.get("discovered_resources", [])
     current_tz        = state.get("timezone")
+    repeat            = state.get("repeat", {})
+    repeat_count      = int(repeat.get("count", 1))
+    repeat_interval   = int(repeat.get("interval_min", 10))
     text = t("settings_title", lang)
     if dynamic_resources:
         text += t("settings_dynamic_note", lang, count=len(dynamic_resources))
     send_service(chat_id, text,
-         reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang))
+         reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                        repeat_count, repeat_interval))
 
 
 def handle_status(chat_id):
@@ -669,18 +710,53 @@ def handle_callback(callback_query):
         state["timezone"] = new_tz
         update_user(chat_id, state=state)
         answer_callback(cq_id, t("tz_saved_toast", lang, tz=tz_display_name(new_tz)))
+        repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
             t("settings_title", lang),
-            reply_markup=settings_keyboard(tracking, dynamic_resources, new_tz, lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, new_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10))),
         )
+
+    elif data.startswith("repeat_count:"):
+        n = max(1, min(5, int(data.split(":", 1)[1])))
+        state.setdefault("repeat", {})["count"] = n
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("repeat_count_toast", lang, n=n))
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           n, int(repeat.get("interval_min", 10))),
+        )
+
+    elif data.startswith("repeat_interval:"):
+        m = int(data.split(":", 1)[1])
+        state.setdefault("repeat", {})["interval_min"] = m
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("repeat_interval_toast", lang, m=m))
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           int(repeat.get("count", 1)), m),
+        )
+
+    elif data == "noop":
+        answer_callback(cq_id)
 
     elif data in ("settings:open", "settings:back"):
         answer_callback(cq_id)
+        repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
             t("settings_title", lang),
-            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10))),
         )
 
     elif data == "settings:close":
@@ -692,7 +768,9 @@ def handle_callback(callback_query):
         for dr in dynamic_resources:
             icon = "✅" if tracking.get(dr["key"]) else "❌"
             lines.append(f"{icon} {dr['emoji']} {dr['label']}")
+        repeat = state.get("repeat", {})
         lines.append(f"\n🕐 {tz_display_name(current_tz)}")
+        lines.append(t("repeat_summary", lang, count=repeat.get("count", 1), interval=repeat.get("interval_min", 10)))
         edit_text(
             chat_id, msg_id,
             t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
