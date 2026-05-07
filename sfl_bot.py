@@ -480,6 +480,7 @@ def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
 
 
 
+def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       repeat_count=3, repeat_interval_min=10):
     """Inline-клавиатура для /settings."""
     buttons = []
