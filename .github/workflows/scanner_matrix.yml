@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write   # Нужно для self-restart в restart job
 
 jobs:
   # ── Шаг 1: получаем список пользователей ──────────────────────────────────
@@ -74,3 +75,25 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
         run: python sfl_scanner.py --user ${{ matrix.telegram_id }}
+
+  # ── Шаг 3: self-restart — как в оригинальном scanner.yml ──────────────────
+  # Запускается после того как все scan-джобы завершились.
+  # Это обеспечивает непрерывную работу — cron остаётся только страховкой.
+  restart:
+    needs: scan
+    if: always()   # Даже если отдельные scan-джобы упали
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Trigger next matrix run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\"}" \
+            && echo "✅ Next matrix run triggered" \
+            || echo "⚠️ Failed to trigger (cron will catch it)"
