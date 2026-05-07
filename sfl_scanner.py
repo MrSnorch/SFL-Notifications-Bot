@@ -73,7 +73,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     "mid":          mid,
                     "ready_count":  e.ready_count,
                     "count":        e.count,
-                    "sent_count":   1,
+                    "sent_count":   0,
                     "last_sent_at": now,
                 }
         else:
@@ -254,7 +254,7 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
             "mid":          mid,
             "ready_count":  event.ready_count,
             "count":        event.count,
-            "sent_count":   1,
+            "sent_count":   0,
             "last_sent_at": time.time(),
         }
         state["ready_alerts"] = alerts_state
