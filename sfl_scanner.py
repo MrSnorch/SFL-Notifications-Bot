@@ -44,14 +44,18 @@ TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 # ══════════════════════════════════════════════════════════════════════════════
 
 def process_ready_alerts(chat_id: int, events: list[Event],
-                         alerts_state: dict) -> dict:
+                         alerts_state: dict,
+                         repeat_count: int = 3,
+                         repeat_interval_sec: int = 600) -> dict:
     """
     Для каждого готового события:
     - Если нет алерта → отправляем новый.
     - Если счётчик изменился → редактируем.
+    - Если событие не собрано и прошёл интервал → повтор (до repeat_count раз).
     - Если событие больше не готово → удаляем алерт.
     """
     current_ready = {}
+    now = time.time()
 
     for e in events:
         if e.ready_count <= 0:
@@ -66,21 +70,36 @@ def process_ready_alerts(chat_id: int, events: list[Event],
             mid = tg_send(TG_TOKEN, chat_id, text)
             if mid:
                 alerts_state[key] = {
-                    "mid": mid,
-                    "ready_count": e.ready_count,
-                    "count": e.count,
+                    "mid":          mid,
+                    "ready_count":  e.ready_count,
+                    "count":        e.count,
+                    "sent_count":   1,
+                    "last_sent_at": now,
                 }
         else:
-            mid    = stored["mid"]
-            old_rc = stored.get("ready_count", -1)
-            old_c  = stored.get("count", e.count)
+            mid       = stored["mid"]
+            old_rc    = stored.get("ready_count", -1)
+            old_c     = stored.get("count", e.count)
+            sent      = stored.get("sent_count", 1)
+            last_sent = stored.get("last_sent_at", now)
+
             if old_rc != e.ready_count or old_c != e.count:
+                # Счётчик изменился — редактируем
                 tg_edit(TG_TOKEN, chat_id, mid, text)
-                alerts_state[key] = {
-                    "mid": mid,
-                    "ready_count": e.ready_count,
-                    "count": e.count,
-                }
+                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
+            elif sent < repeat_count and (now - last_sent) >= repeat_interval_sec:
+                # Повтор: новое сообщение (пингует), старое удаляем
+                new_mid = tg_send(TG_TOKEN, chat_id, text)
+                if new_mid:
+                    tg_delete(TG_TOKEN, chat_id, mid)
+                    alerts_state[key] = {
+                        "mid":          new_mid,
+                        "ready_count":  e.ready_count,
+                        "count":        e.count,
+                        "sent_count":   sent + 1,
+                        "last_sent_at": now,
+                    }
+                    log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
 
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
@@ -155,8 +174,14 @@ def scan_user(user: dict) -> "int | None":
         log.info(f"[{username}] {'📌 Закреплено' if ok else '⚠️ Не удалось закрепить'} статус-сообщение {new_msg_id}")
 
     # ── Алерты о готовности (пингуют) ────────────────────────────────────────
+    repeat          = state.get("repeat", {})
+    repeat_count    = max(1, min(5, int(repeat.get("count", 1))))
+    repeat_interval = int(repeat.get("interval_min", 10)) * 60
     state["ready_alerts"] = process_ready_alerts(
-        telegram_id, events, alerts_state)
+        telegram_id, events, alerts_state,
+        repeat_count=repeat_count,
+        repeat_interval_sec=repeat_interval,
+    )
 
     save_state(telegram_id, state)
     ready_cnt = sum(1 for e in events if e.ready_count > 0)
