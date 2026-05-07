@@ -245,9 +245,11 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
     mid  = tg_send(TG_TOKEN, telegram_id, text)
     if mid:
         alerts_state[event.name] = {
-            "mid":         mid,
-            "ready_count": event.ready_count,
-            "count":       event.count,
+            "mid":          mid,
+            "ready_count":  event.ready_count,
+            "count":        event.count,
+            "sent_count":   1,
+            "last_sent_at": time.time(),
         }
         state["ready_alerts"] = alerts_state
         save_state(telegram_id, state)
