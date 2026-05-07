@@ -184,18 +184,18 @@ def scan_user(user: dict):
 
 # Кулдауны при 429: telegram_id → время до которого пропускаем пользователя
 _cooldowns: dict = {}
-COOLDOWN_429 = 300  # 5 минут при rate limit
+COOLDOWN_429 = 60  # 1 минута при повторном rate limit (сверх штатного интервала)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ГЛАВНЫЙ ЦИКЛ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_loop(duration_seconds: int = 21300, request_interval: int = 60):
+def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
     """
     Основной цикл сканера.
     duration=21300с (5ч 55м) — чуть меньше лимита GitHub Actions job 6ч.
-    request_interval=60с — пауза между каждым запросом к API (1 запрос в минуту).
+    request_interval=15с — минимальный интервал между запросами согласно документации API.
     """
     if not TG_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан!")
@@ -265,8 +265,8 @@ if __name__ == "__main__":
                         help="Один прогон и выход")
     parser.add_argument("--duration", type=int, default=21300,
                         help="Длительность основного цикла (секунды)")
-    parser.add_argument("--request-interval", type=int, default=60,
-                        help="Пауза между запросами к API (секунды, default: 60)")
+    parser.add_argument("--request-interval", type=int, default=15,
+                        help="Пауза между запросами к API (секунды, default: 15 — минимум по документации)")
     args = parser.parse_args()
 
     if args.once:
