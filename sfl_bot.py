@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-sfl_scanner.py — Мульти-пользовательский сканер SFL.
-Запускается GitHub Actions каждые 5 минут.
-Читает всех активных пользователей из Supabase,
-сканирует их фермы и шлёт уведомления в личные сообщения.
+sfl_bot.py — Telegram бот для управления настройками SFL Notifier.
+
+Команды:
+  /start   — регистрация
+  /setfarm — установить ID фермы
+  /setkey  — установить API ключ (бот удалит сообщение)
+  /settings — настройки отслеживания (inline кнопки)
+  /status  — текущий статус фермы прямо сейчас
+  /stop    — приостановить уведомления
+  /resume  — возобновить уведомления
+  /lang    — сменить язык / change language / змінити мову
+  /help    — помощь
+
+Бот использует long-polling и работает в цикле 5ч 50м.
+GitHub Actions перезапускает его каждые 6 часов по cron.
 """
 
 import json, os, sys, time, logging
-from datetime import datetime
 
-# ── зависимости ──────────────────────────────────────────────────────────────
 def _pip(pkg):
     os.system(f'"{sys.executable}" -m pip install {pkg} -q')
 
@@ -18,438 +27,969 @@ try:
 except ImportError:
     _pip("requests"); import requests
 
-# ── инициализация логгера ─────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("SFL")
+log = logging.getLogger("SFL_BOT")
 
 from sfl_core import (
-    scan_farm, load_from_api, format_status_message, format_ready_alert,
-    tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
-    tg_unpin_message, Event,
+    scan_farm, load_from_api, format_status_message,
+    DEFAULT_TRACKING, TRACK_LABELS,
     discover_dynamic_resources, merge_discovered,
-    get_tz,
+    TIMEZONES, get_tz, tz_display_name,
 )
 from sfl_supabase import (
-    get_all_active_users, get_user, load_state, save_state, update_user,
+    get_or_create_user, get_user, update_user,
+    activate_user_if_ready, upsert_user,
 )
 
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+API_BASE = f"https://api.telegram.org/bot{TG_TOKEN}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ОБРАБОТКА АЛЕРТОВ ГОТОВНОСТИ
+# ЛОКАЛИЗАЦИЯ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def process_ready_alerts(chat_id: int, events: list[Event],
-                         alerts_state: dict,
-                         repeat_count: int = 3,
-                         repeat_interval_sec: int = 600) -> dict:
-    """
-    Для каждого готового события:
-    - Если нет алерта → отправляем новый.
-    - Если счётчик изменился → редактируем.
-    - Если событие не собрано и прошёл интервал → повтор (до repeat_count раз).
-    - Если событие больше не готово → удаляем алерт.
-    """
-    current_ready = {}
-    now = time.time()
+SUPPORTED_LANGS = {
+    "ru": ("🇷🇺", "Русский"),
+    "en": ("🇬🇧", "English"),
+    "uk": ("🇺🇦", "Українська"),
+}
 
-    for e in events:
-        if e.ready_count <= 0:
-            continue
-        key  = e.name
-        text = format_ready_alert(e)
-        current_ready[key] = e
-        stored = alerts_state.get(key)
+DEFAULT_LANG = "ru"
 
-        if stored is None:
-            # Новый алерт
-            mid = tg_send(TG_TOKEN, chat_id, text)
-            if mid:
-                alerts_state[key] = {
-                    "mid":          mid,
-                    "ready_count":  e.ready_count,
-                    "count":        e.count,
-                    "sent_count":   0,
-                    "last_sent_at": now,
-                }
+STRINGS = {
+    "welcome": {
+        "ru": (
+            "🌻 <b>SFL Farm Notifier</b>\n\n"
+            "Привет! Я буду следить за твоей фермой в Sunflower Land и присылать уведомления когда ресурсы готовы.\n\n"
+            "Для начала настрой:\n"
+            "1️⃣ /setfarm <code>12345</code> — укажи ID фермы\n"
+            "2️⃣ /setkey <code>твой_api_ключ</code> — укажи API ключ\n\n"
+            "Как получить API ключ:\n"
+            "• Зайди на <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
+            "• Настройки → Community API → Create Key\n\n"
+            "После настройки уведомления включатся автоматически! 🚀"
+        ),
+        "en": (
+            "🌻 <b>SFL Farm Notifier</b>\n\n"
+            "Hello! I'll monitor your Sunflower Land farm and send notifications when resources are ready.\n\n"
+            "To get started:\n"
+            "1️⃣ /setfarm <code>12345</code> — set your farm ID\n"
+            "2️⃣ /setkey <code>your_api_key</code> — set your API key\n\n"
+            "How to get an API key:\n"
+            "• Go to <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
+            "• Settings → Community API → Create Key\n\n"
+            "Notifications will turn on automatically once you're set up! 🚀"
+        ),
+        "uk": (
+            "🌻 <b>SFL Farm Notifier</b>\n\n"
+            "Привіт! Я стежитиму за твоєю фермою у Sunflower Land і надсилатиму сповіщення, коли ресурси готові.\n\n"
+            "Для початку налаштуй:\n"
+            "1️⃣ /setfarm <code>12345</code> — вкажи ID ферми\n"
+            "2️⃣ /setkey <code>твій_api_ключ</code> — вкажи API ключ\n\n"
+            "Як отримати API ключ:\n"
+            "• Зайди на <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
+            "• Налаштування → Community API → Create Key\n\n"
+            "Після налаштування сповіщення увімкнуться автоматично! 🚀"
+        ),
+    },
+    "help": {
+        "ru": (
+            "🌻 <b>SFL Farm Notifier — Команды</b>\n\n"
+            "/start — перезапустить бота\n"
+            "/setfarm <code>ID</code> — установить ID фермы\n"
+            "/setkey <code>KEY</code> — установить API ключ\n"
+            "/settings — настроить что отслеживать\n"
+            "/status — проверить ферму прямо сейчас\n"
+            "/stop — приостановить уведомления\n"
+            "/resume — возобновить уведомления\n"
+            "/lang — сменить язык\n"
+            "/clean — очистить чат\n"
+            "/help — это сообщение"
+        ),
+        "en": (
+            "🌻 <b>SFL Farm Notifier — Commands</b>\n\n"
+            "/start — restart the bot\n"
+            "/setfarm <code>ID</code> — set farm ID\n"
+            "/setkey <code>KEY</code> — set API key\n"
+            "/settings — configure what to track\n"
+            "/status — check farm right now\n"
+            "/stop — pause notifications\n"
+            "/resume — resume notifications\n"
+            "/lang — change language\n"
+            "/clean — clean up the chat\n"
+            "/help — this message"
+        ),
+        "uk": (
+            "🌻 <b>SFL Farm Notifier — Команди</b>\n\n"
+            "/start — перезапустити бота\n"
+            "/setfarm <code>ID</code> — встановити ID ферми\n"
+            "/setkey <code>KEY</code> — встановити API ключ\n"
+            "/settings — налаштувати що відстежувати\n"
+            "/status — перевірити ферму прямо зараз\n"
+            "/stop — призупинити сповіщення\n"
+            "/resume — поновити сповіщення\n"
+            "/lang — змінити мову\n"
+            "/clean — очистити чат\n"
+            "/help — це повідомлення"
+        ),
+    },
+    "setfarm_usage": {
+        "ru": "❌ Укажи ID фермы:\n<code>/setfarm 12345</code>",
+        "en": "❌ Please provide your farm ID:\n<code>/setfarm 12345</code>",
+        "uk": "❌ Вкажи ID ферми:\n<code>/setfarm 12345</code>",
+    },
+    "setfarm_not_number": {
+        "ru": "❌ ID фермы должен быть числом.\nПример: <code>/setfarm 12345</code>",
+        "en": "❌ Farm ID must be a number.\nExample: <code>/setfarm 12345</code>",
+        "uk": "❌ ID ферми має бути числом.\nПриклад: <code>/setfarm 12345</code>",
+    },
+    "setfarm_ok_active": {
+        "ru": "✅ Ферма <b>{farm_id}</b> установлена!\n\n🔔 Уведомления <b>включены</b> — первый статус придёт через несколько минут.",
+        "en": "✅ Farm <b>{farm_id}</b> has been set!\n\n🔔 Notifications <b>enabled</b> — first status update will arrive in a few minutes.",
+        "uk": "✅ Ферму <b>{farm_id}</b> встановлено!\n\n🔔 Сповіщення <b>увімкнено</b> — перший статус надійде за кілька хвилин.",
+    },
+    "setfarm_ok_pending": {
+        "ru": "✅ Ферма <b>{farm_id}</b> установлена!\n\n⏳ Осталось указать API ключ:\n<code>/setkey твой_ключ</code>",
+        "en": "✅ Farm <b>{farm_id}</b> has been set!\n\n⏳ Now provide your API key:\n<code>/setkey your_key</code>",
+        "uk": "✅ Ферму <b>{farm_id}</b> встановлено!\n\n⏳ Залишилось вказати API ключ:\n<code>/setkey твій_ключ</code>",
+    },
+    "setkey_usage": {
+        "ru": "❌ Укажи API ключ:\n<code>/setkey твой_ключ</code>",
+        "en": "❌ Please provide your API key:\n<code>/setkey your_key</code>",
+        "uk": "❌ Вкажи API ключ:\n<code>/setkey твій_ключ</code>",
+    },
+    "setkey_ok_active": {
+        "ru": "✅ API ключ сохранён! (твоё сообщение удалено для безопасности)\n\n🔔 Уведомления <b>включены</b> — первый статус придёт через несколько минут.",
+        "en": "✅ API key saved! (your message was deleted for security)\n\n🔔 Notifications <b>enabled</b> — first status update will arrive in a few minutes.",
+        "uk": "✅ API ключ збережено! (твоє повідомлення видалено для безпеки)\n\n🔔 Сповіщення <b>увімкнено</b> — перший статус надійде за кілька хвилин.",
+    },
+    "setkey_ok_need_farm": {
+        "ru": "✅ API ключ сохранён! (твоё сообщение удалено для безопасности)\n\n⏳ Осталось указать ID фермы:\n<code>/setfarm 12345</code>",
+        "en": "✅ API key saved! (your message was deleted for security)\n\n⏳ Now provide your farm ID:\n<code>/setfarm 12345</code>",
+        "uk": "✅ API ключ збережено! (твоє повідомлення видалено для безпеки)\n\n⏳ Залишилось вказати ID ферми:\n<code>/setfarm 12345</code>",
+    },
+    "setkey_ok": {
+        "ru": "✅ API ключ сохранён! (твоё сообщение удалено для безопасности)",
+        "en": "✅ API key saved! (your message was deleted for security)",
+        "uk": "✅ API ключ збережено! (твоє повідомлення видалено для безпеки)",
+    },
+    "settings_title": {
+        "ru": "⚙️ <b>Настройки отслеживания</b>\n\nВыбери что отслеживать:",
+        "en": "⚙️ <b>Tracking Settings</b>\n\nChoose what to track:",
+        "uk": "⚙️ <b>Налаштування відстеження</b>\n\nОбери що відстежувати:",
+    },
+    "settings_dynamic_note": {
+        "ru": "\n\n🔍 <i>Найдено новых ресурсов: {count}</i>",
+        "en": "\n\n🔍 <i>New resources found: {count}</i>",
+        "uk": "\n\n🔍 <i>Знайдено нових ресурсів: {count}</i>",
+    },
+    "settings_saved": {
+        "ru": "✅ Сохранено!",
+        "en": "✅ Saved!",
+        "uk": "✅ Збережено!",
+    },
+    "settings_saved_title": {
+        "ru": "✅ <b>Настройки сохранены!</b>",
+        "en": "✅ <b>Settings saved!</b>",
+        "uk": "✅ <b>Налаштування збережено!</b>",
+    },
+    "settings_btn_save": {
+        "ru": "💾 Сохранить и закрыть",
+        "en": "💾 Save and close",
+        "uk": "💾 Зберегти і закрити",
+    },
+    "settings_btn_back": {
+        "ru": "◀️ Назад к настройкам",
+        "en": "◀️ Back to settings",
+        "uk": "◀️ Назад до налаштувань",
+    },
+    "settings_unknown_resource": {
+        "ru": "Неизвестный ресурс",
+        "en": "Unknown resource",
+        "uk": "Невідомий ресурс",
+    },
+    "repeat_btn_label": {
+        "ru": "🔁 Повторы: {count}× / {interval}м",
+        "en": "🔁 Repeats: {count}× / {interval}m",
+        "uk": "🔁 Повтори: {count}× / {interval}хв",
+    },
+    "repeat_btn_off_label": {
+        "ru": "🔕 Повторы: выкл",
+        "en": "🔕 Repeats: off",
+        "uk": "🔕 Повтори: вимк",
+    },
+    "repeat_off_btn": {
+        "ru": "🔕 Выкл",
+        "en": "🔕 Off",
+        "uk": "🔕 Вимк",
+    },
+    "repeat_on_btn": {
+        "ru": "🔔 Вкл",
+        "en": "🔔 On",
+        "uk": "🔔 Увімк",
+    },
+    "repeat_off_toast": {
+        "ru": "🔕 Повторы отключены",
+        "en": "🔕 Repeats disabled",
+        "uk": "🔕 Повтори вимкнено",
+    },
+    "repeat_on_toast": {
+        "ru": "🔔 Повторы включены",
+        "en": "🔔 Repeats enabled",
+        "uk": "🔔 Повтори увімкнено",
+    },
+    "repeat_menu_title": {
+        "ru": "🔁 <b>Повтор уведомлений</b>\n\nЕсли не собрал — напомним ещё раз.",
+        "en": "🔁 <b>Repeat notifications</b>\n\nWe'll remind you again if not collected.",
+        "uk": "🔁 <b>Повтор сповіщень</b>\n\nНагадаємо ще раз, якщо не зібрав.",
+    },
+    "repeat_count_label": {
+        "ru": "🔁 Повторов:",
+        "en": "🔁 Repeats:",
+        "uk": "🔁 Повторів:",
+    },
+    "repeat_interval_label": {
+        "ru": "⏳ Інтервал:",
+        "en": "⏳ Interval:",
+        "uk": "⏳ Інтервал:",
+    },
+    "repeat_count_toast": {
+        "ru": "🔔 Повторов: {n}×",
+        "en": "🔔 Repeats: {n}×",
+        "uk": "🔔 Повторів: {n}×",
+    },
+    "repeat_interval_toast": {
+        "ru": "⏱ Интервал: {m}м",
+        "en": "⏱ Interval: {m}m",
+        "uk": "⏱ Інтервал: {m}хв",
+    },
+    "repeat_summary": {
+        "ru": "🔁 Повторов: {count}× / каждые {interval}м",
+        "en": "🔁 Repeats: {count}× / every {interval}m",
+        "uk": "🔁 Повторів: {count}× / кожні {interval}хв",
+    },
+    "repeat_summary_off": {
+        "ru": "🔕 Повторы: выкл",
+        "en": "🔕 Repeats: off",
+        "uk": "🔕 Повтори: вимк",
+    },
+    "status_no_farm": {
+        "ru": "❌ Ферма не настроена.\nИспользуй /setfarm и /setkey",
+        "en": "❌ Farm is not set up.\nUse /setfarm and /setkey",
+        "uk": "❌ Ферму не налаштовано.\nВикористай /setfarm та /setkey",
+    },
+    "status_loading": {
+        "ru": "⏳ Загружаю данные фермы...",
+        "en": "⏳ Loading farm data...",
+        "uk": "⏳ Завантажую дані ферми...",
+    },
+    "status_error": {
+        "ru": "❌ Ошибка при загрузке фермы:\n<code>{error}</code>",
+        "en": "❌ Error loading farm:\n<code>{error}</code>",
+        "uk": "❌ Помилка при завантаженні ферми:\n<code>{error}</code>",
+    },
+    "status_new_resources": {
+        "ru": "🔍 <b>Найдены новые ресурсы для отслеживания:</b> {labels}\nВключи их в /settings если нужно.",
+        "en": "🔍 <b>New trackable resources found:</b> {labels}\nEnable them in /settings if needed.",
+        "uk": "🔍 <b>Знайдено нові ресурси для відстеження:</b> {labels}\nУвімкни їх у /settings якщо потрібно.",
+    },
+    "not_registered": {
+        "ru": "❌ Сначала зарегистрируйся: /start",
+        "en": "❌ Please register first: /start",
+        "uk": "❌ Спочатку зареєструйся: /start",
+    },
+    "stop_ok": {
+        "ru": "⏸️ Уведомления <b>приостановлены</b>.\nЧтобы возобновить — /resume",
+        "en": "⏸️ Notifications <b>paused</b>.\nTo resume — /resume",
+        "uk": "⏸️ Сповіщення <b>призупинено</b>.\nЩоб поновити — /resume",
+    },
+    "resume_no_farm": {
+        "ru": "❌ Сначала настрой ферму:\n/setfarm и /setkey",
+        "en": "❌ Please set up your farm first:\n/setfarm and /setkey",
+        "uk": "❌ Спочатку налаштуй ферму:\n/setfarm та /setkey",
+    },
+    "resume_ok": {
+        "ru": "▶️ Уведомления <b>возобновлены</b>!\nПервый статус придёт через несколько минут.",
+        "en": "▶️ Notifications <b>resumed</b>!\nFirst status update will arrive in a few minutes.",
+        "uk": "▶️ Сповіщення <b>поновлено</b>!\nПерший статус надійде за кілька хвилин.",
+    },
+    "lang_choose": {
+        "ru": "🌐 <b>Выбери язык</b>\n\nТекущий язык: <b>{current}</b>",
+        "en": "🌐 <b>Choose language</b>\n\nCurrent language: <b>{current}</b>",
+        "uk": "🌐 <b>Обери мову</b>\n\nПоточна мова: <b>{current}</b>",
+    },
+    "lang_set": {
+        "ru": "✅ Язык изменён на <b>{lang_name}</b>",
+        "en": "✅ Language changed to <b>{lang_name}</b>",
+        "uk": "✅ Мову змінено на <b>{lang_name}</b>",
+    },
+    "tz_title": {
+        "ru": "🕐 <b>Выбери часовой пояс</b>\n\nТекущий: <b>{current_tz}</b>\n\nВремя в статусе и уведомлениях будет отображаться в выбранном поясе.",
+        "en": "🕐 <b>Choose timezone</b>\n\nCurrent: <b>{current_tz}</b>\n\nStatus and notification times will be shown in the selected timezone.",
+        "uk": "🕐 <b>Оберіть часовий пояс</b>\n\nПоточний: <b>{current_tz}</b>\n\nЧас у статусі та сповіщеннях буде відображатися у вибраному поясі.",
+    },
+    "tz_btn_label": {
+        "ru": "🕐 Часовой пояс: {tz}",
+        "en": "🕐 Timezone: {tz}",
+        "uk": "🕐 Часовий пояс: {tz}",
+    },
+    "tz_saved_toast": {
+        "ru": "✅ {tz}",
+        "en": "✅ {tz}",
+        "uk": "✅ {tz}",
+    },
+    "unknown_command": {
+        "ru": "❓ Неизвестная команда.\n",
+        "en": "❓ Unknown command.\n",
+        "uk": "❓ Невідома команда.\n",
+    },
+    "callback_not_registered": {
+        "ru": "Сначала /start",
+        "en": "Please /start first",
+        "uk": "Спочатку /start",
+    },
+    "clean_done": {
+        "ru": "🧹 Удалено сообщений: <b>{count}</b>\n📌 Закреплённый статус и уведомления сохранены.",
+        "en": "🧹 Deleted messages: <b>{count}</b>\n📌 Pinned status and notifications kept.",
+        "uk": "🧹 Видалено повідомлень: <b>{count}</b>\n📌 Закріплений статус і сповіщення збережено.",
+    },
+    "clean_nothing": {
+        "ru": "✨ Чат уже чист.",
+        "en": "✨ Chat is already clean.",
+        "uk": "✨ Чат вже чистий.",
+    },
+}
+
+
+def t(key, lang, **kwargs):
+    """Вернуть строку на нужном языке с подстановкой параметров."""
+    lang = lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
+    variants = STRINGS.get(key, {})
+    text = variants.get(lang) or variants.get(DEFAULT_LANG, "[{}]".format(key))
+    return text.format(**kwargs) if kwargs else text
+
+
+def get_lang(user):
+    """Вернуть язык пользователя из state."""
+    if not user:
+        return DEFAULT_LANG
+    state = user.get("state") or {}
+    lang = state.get("lang", DEFAULT_LANG)
+    return lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TELEGRAM API HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def tg(method, **kwargs):
+    try:
+        polling_timeout = kwargs.get("timeout", 0)
+        http_timeout = polling_timeout + 10 if polling_timeout else 20
+        r = requests.post(f"{API_BASE}/{method}", json=kwargs, timeout=http_timeout)
+        if r.ok:
+            return r.json().get("result")
+        log.warning(f"TG {method} failed: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        log.warning(f"TG {method} error: {e}")
+    return None
+
+
+def send(chat_id, text, reply_markup=None, silent=False):
+    kwargs = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_notification": silent,
+    }
+    if reply_markup:
+        kwargs["reply_markup"] = reply_markup
+    return tg("sendMessage", **kwargs)
+
+
+def edit_text(chat_id, message_id, text, reply_markup=None):
+    kwargs = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if reply_markup:
+        kwargs["reply_markup"] = reply_markup
+    return tg("editMessageText", **kwargs)
+
+
+def answer_callback(callback_query_id, text=""):
+    tg("answerCallbackQuery",
+       callback_query_id=callback_query_id, text=text, show_alert=False)
+
+
+def delete_msg(chat_id, message_id):
+    tg("deleteMessage", chat_id=chat_id, message_id=message_id)
+
+def track_msg(chat_id, message_id):
+    """Сохранить ID сервисного сообщения для последующей очистки."""
+    user = get_user(chat_id)
+    if not user:
+        return
+    state = user.get("state") or {}
+    ids = state.get("service_msg_ids", [])
+    ids.append(message_id)
+    state["service_msg_ids"] = ids[-200:]  # хранить последние 200
+    update_user(chat_id, state=state)
+
+
+def send_service(chat_id, text, reply_markup=None, silent=False):
+    """Отправить сообщение и запомнить его ID для /clean."""
+    result = send(chat_id, text, reply_markup=reply_markup, silent=silent)
+    if result and result.get("message_id"):
+        track_msg(chat_id, result["message_id"])
+    return result
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# КЛАВИАТУРЫ
+# ══════════════════════════════════════════════════════════════════════════════
+
+def lang_keyboard(current_lang):
+    """Inline-клавиатура выбора языка."""
+    buttons = []
+    for code, (flag, name) in SUPPORTED_LANGS.items():
+        marker = "🔘 " if code == current_lang else ""
+        buttons.append([{
+            "text": f"{marker}{flag} {name}",
+            "callback_data": f"set_lang:{code}",
+        }])
+    return {"inline_keyboard": buttons}
+
+
+def tz_keyboard(current_tz, lang):
+    """Клавиатура выбора часового пояса — 2 кнопки в ряд."""
+    buttons = []
+    row = []
+    for i, (tz_name, flag, label, utc) in enumerate(TIMEZONES):
+        marker = "🔘 " if tz_name == (current_tz or "Europe/Kiev") else ""
+        btn = {
+            "text": f"{marker}{flag} {label} ({utc})",
+            "callback_data": f"set_tz:{tz_name}",
+        }
+        row.append(btn)
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([{
+        "text": t("settings_btn_back", lang),
+        "callback_data": "settings:open",
+    }])
+    return {"inline_keyboard": buttons}
+
+
+def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
+    """Подменю настройки повторных уведомлений."""
+    if repeat_count == 0:
+        off_row = [{"text": t("repeat_on_btn", lang), "callback_data": "repeat_count:2"}]
+    else:
+        off_row = [{"text": t("repeat_off_btn", lang), "callback_data": "repeat_count:0"}]
+    count_row = [
+        {"text": f"{'✅ ' if n == repeat_count else ''}{n}×", "callback_data": f"repeat_count:{n}"}
+        for n in range(1, 6)
+    ]
+    interval_row = [
+        {"text": f"{'✅ ' if m == repeat_interval_min else ''}{m}{'м' if lang != 'en' else 'm'}",
+         "callback_data": f"repeat_interval:{m}"}
+        for m in (5, 10, 15, 30)
+    ]
+    rows = [off_row]
+    if repeat_count > 0:
+        rows.append(count_row)
+        rows.append(interval_row)
+    rows.append([{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}])
+    return {"inline_keyboard": rows}
+
+
+
+def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                      repeat_count=3, repeat_interval_min=10):
+    """Inline-клавиатура для /settings."""
+    buttons = []
+    for key, label in TRACK_LABELS:
+        enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
+        icon = "✅" if enabled else "❌"
+        buttons.append([{"text": f"{icon} {label}", "callback_data": f"toggle:{key}"}])
+    for dr in (dynamic_resources or []):
+        key   = dr["key"]
+        label = f"{dr['emoji']} {dr['label']}"
+        icon  = "✅" if tracking.get(key, False) else "❌"
+        buttons.append([{"text": f"{icon} {label}", "callback_data": f"toggle:{key}"}])
+    tz_label = tz_display_name(current_tz)
+    buttons.append([{
+        "text": t("tz_btn_label", lang, tz=tz_label),
+        "callback_data": "tz_menu",
+    }])
+    repeat_label = (
+        t("repeat_btn_off_label", lang)
+        if repeat_count == 0
+        else t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min)
+    )
+    buttons.append([{
+        "text": repeat_label,
+        "callback_data": "repeat_menu",
+    }])
+    buttons.append([{
+        "text": t("settings_btn_save", lang),
+        "callback_data": "settings:close",
+    }])
+    return {"inline_keyboard": buttons}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ОБРАБОТЧИКИ КОМАНД
+# ══════════════════════════════════════════════════════════════════════════════
+
+def handle_start(chat_id, user_from):
+    get_or_create_user(
+        chat_id,
+        username=user_from.get("username", ""),
+        first_name=user_from.get("first_name", ""),
+    )
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    send_service(chat_id, t("welcome", lang), silent=True)
+
+
+def handle_setfarm(chat_id, text):
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        send_service(chat_id, t("setfarm_usage", lang))
+        return
+    farm_id = parts[1].strip()
+    if not farm_id.isdigit():
+        send_service(chat_id, t("setfarm_not_number", lang))
+        return
+    get_or_create_user(chat_id)
+    update_user(chat_id, farm_id=farm_id)
+    was_activated = activate_user_if_ready(chat_id)
+    if was_activated:
+        send_service(chat_id, t("setfarm_ok_active", lang, farm_id=farm_id))
+    else:
+        send_service(chat_id, t("setfarm_ok_pending", lang, farm_id=farm_id))
+
+
+def handle_setkey(chat_id, message_id, text):
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        send_service(chat_id, t("setkey_usage", lang))
+        return
+    api_key = parts[1].strip()
+    delete_msg(chat_id, message_id)
+    get_or_create_user(chat_id)
+    update_user(chat_id, api_key=api_key)
+    was_activated = activate_user_if_ready(chat_id)
+    if was_activated:
+        send_service(chat_id, t("setkey_ok_active", lang))
+    else:
+        user = get_user(chat_id)
+        if not user or not user.get("farm_id"):
+            send_service(chat_id, t("setkey_ok_need_farm", lang))
         else:
-            mid       = stored["mid"]
-            old_rc    = stored.get("ready_count", -1)
-            old_c     = stored.get("count", e.count)
-            sent      = stored.get("sent_count", 1)
-            last_sent = stored.get("last_sent_at", now)
+            send_service(chat_id, t("setkey_ok", lang))
 
-            if old_rc != e.ready_count or old_c != e.count:
-                # Счётчик изменился — редактируем
-                tg_edit(TG_TOKEN, chat_id, mid, text)
-                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
-            elif sent < repeat_count and (now - last_sent) >= repeat_interval_sec:
-                # Повтор: новое сообщение (пингует), старое удаляем
-                new_mid = tg_send(TG_TOKEN, chat_id, text)
-                if new_mid:
-                    tg_delete(TG_TOKEN, chat_id, mid)
-                    alerts_state[key] = {
-                        "mid":          new_mid,
-                        "ready_count":  e.ready_count,
-                        "count":        e.count,
-                        "sent_count":   sent + 1,
-                        "last_sent_at": now,
-                    }
-                    log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
-            elif sent >= repeat_count:
-                log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{repeat_count})")
-            else:
-                remaining = int(repeat_interval_sec - (now - last_sent))
-                log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
-                          f"(отправлено {sent}/{repeat_count})")
 
-    # Удаляем алерты которые больше не актуальны
-    for key in list(alerts_state.keys()):
-        if key not in current_ready:
-            mid = alerts_state[key]["mid"]
-            tg_delete(TG_TOKEN, chat_id, mid)
-            del alerts_state[key]
-
-    return alerts_state
-
-# ══════════════════════════════════════════════════════════════════════════════
-# СКАНИРОВАНИЕ ОДНОГО ПОЛЬЗОВАТЕЛЯ
-# ══════════════════════════════════════════════════════════════════════════════
-
-def scan_user(user: dict) -> "int | None":
-    """Возвращает next_ready_at_ms (мс) — время ближайшего ещё-не-готового события,
-    или None если всё уже готово / нет событий."""
-    telegram_id = user["telegram_id"]
-    farm_id     = user.get("farm_id", "")
-    api_key     = user.get("api_key", "")
-    tracking    = user.get("tracking") or {}
-    username    = user.get("username") or user.get("first_name") or str(telegram_id)
-
-    log.info(f"[{username}] Сканирование фермы {farm_id}...")
-
-    try:
-        farm = load_from_api(farm_id, api_key)
-    except Exception as e:
-        if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
-            raise  # пробрасываем 429 — кулдаун выставляет run_loop
-        log.warning(f"[{username}] Ошибка API: {e}")
+def handle_settings(chat_id):
+    user = get_user(chat_id)
+    if not user:
+        send_service(chat_id, t("not_registered", DEFAULT_LANG))
         return
+    lang              = get_lang(user)
+    tracking          = user.get("tracking") or DEFAULT_TRACKING
+    state             = user.get("state") or {}
+    dynamic_resources = state.get("discovered_resources", [])
+    current_tz        = state.get("timezone")
+    repeat            = state.get("repeat", {})
+    repeat_count      = int(repeat.get("count", 1))
+    repeat_interval   = int(repeat.get("interval_min", 10))
+    text = t("settings_title", lang)
+    if dynamic_resources:
+        text += t("settings_dynamic_note", lang, count=len(dynamic_resources))
+    send_service(chat_id, text,
+         reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                        repeat_count, repeat_interval))
 
-    # ── Автодетект новых ресурсов ─────────────────────────────────────────────
-    state             = load_state(telegram_id)
-    existing          = state.get("discovered_resources", [])
-    newly_found       = discover_dynamic_resources(farm)
-    dynamic_resources = merge_discovered(existing, newly_found)
 
-    if dynamic_resources != existing:
-        state["discovered_resources"] = dynamic_resources
-        new_keys = {d["key"] for d in dynamic_resources} - {d["key"] for d in existing}
-        if new_keys:
-            labels = ", ".join(
-                d["label"] for d in dynamic_resources if d["key"] in new_keys
-            )
-            log.info(f"[{username}] Новые ресурсы: {labels}")
-            tg_send(TG_TOKEN, telegram_id,
-                    f"🔍 <b>Найдены новые ресурсы:</b> {labels}\n"
-                    f"Включи их в /settings если нужно.")
-
-    try:
-        events = scan_farm(farm, tracking, dynamic_resources)
-    except Exception as e:
-        log.warning(f"[{username}] Ошибка сканирования: {e}")
+def handle_status(chat_id):
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    if not user or not user.get("farm_id") or not user.get("api_key"):
+        send_service(chat_id, t("status_no_farm", lang))
         return
+    msg = send_service(chat_id, t("status_loading", lang))
+    loading_msg_id = msg["message_id"] if msg else None
+    try:
+        farm     = load_from_api(user["farm_id"], user["api_key"])
+        tracking = user.get("tracking") or DEFAULT_TRACKING
+        state    = user.get("state") or {}
+        newly_found       = discover_dynamic_resources(farm)
+        existing          = state.get("discovered_resources", [])
+        dynamic_resources = merge_discovered(existing, newly_found)
+        if dynamic_resources != existing:
+            state["discovered_resources"] = dynamic_resources
+            new_keys = {d["key"] for d in dynamic_resources} - {d["key"] for d in existing}
+            if new_keys:
+                labels = ", ".join(d["label"] for d in dynamic_resources
+                                   if d["key"] in new_keys)
+                send_service(chat_id, t("status_new_resources", lang, labels=labels))
+        events       = scan_farm(farm, tracking, dynamic_resources)
+        user_tz      = get_tz(state.get("timezone"))
+        status_text  = format_status_message(events, user["farm_id"], tz=user_tz)
+        old_status_id = state.get("status_msg_id")
+        if loading_msg_id:
+            edit_text(chat_id, loading_msg_id, status_text)
+            new_status_id = loading_msg_id
+        else:
+            new_status_id = None
+        if new_status_id and new_status_id != old_status_id:
+            if old_status_id:
+                tg("unpinChatMessage", chat_id=chat_id, message_id=old_status_id)
+            tg("pinChatMessage", chat_id=chat_id, message_id=new_status_id,
+               disable_notification=True)
+        state["status_msg_id"] = new_status_id or old_status_id or 0
+        update_user(chat_id, state=state)
+        return
+    except Exception as e:
+        status_text = t("status_error", lang, error=str(e))
+    if loading_msg_id:
+        edit_text(chat_id, loading_msg_id, status_text)
+    else:
+        send(chat_id, status_text)
 
-    status_msg_id = state.get("status_msg_id")
-    alerts_state  = state.get("ready_alerts", {})
 
-    # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
-    user_tz     = get_tz(state.get("timezone"))
-    status_text = format_status_message(events, farm_id, tz=user_tz)
-    new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id)
-    state["status_msg_id"] = new_msg_id
+def handle_stop(chat_id):
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    if not user:
+        send(chat_id, t("not_registered", lang))
+        return
+    update_user(chat_id, active=False)
+    send_service(chat_id, t("stop_ok", lang))
 
-    # Закрепляем если появилось новое сообщение (старое не удалось отредактировать)
-    if is_new and new_msg_id:
-        if status_msg_id and status_msg_id != new_msg_id:
-            tg_unpin_message(TG_TOKEN, telegram_id, status_msg_id)
-        ok = tg_pin_message(TG_TOKEN, telegram_id, new_msg_id)
-        log.info(f"[{username}] {'📌 Закреплено' if ok else '⚠️ Не удалось закрепить'} статус-сообщение {new_msg_id}")
 
-    # ── Алерты о готовности (пингуют) ────────────────────────────────────────
-    repeat          = state.get("repeat", {})
-    repeat_count    = max(0, min(5, int(repeat.get("count", 2))))
-    repeat_interval = int(repeat.get("interval_min", 10)) * 60
-    state["ready_alerts"] = process_ready_alerts(
-        telegram_id, events, alerts_state,
-        repeat_count=repeat_count,
-        repeat_interval_sec=repeat_interval,
+def handle_resume(chat_id):
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    if not user:
+        send(chat_id, t("not_registered", lang))
+        return
+    if not user.get("farm_id") or not user.get("api_key"):
+        send_service(chat_id, t("resume_no_farm", lang))
+        return
+    update_user(chat_id, active=True)
+    send_service(chat_id, t("resume_ok", lang))
+
+
+def handle_lang(chat_id):
+    """Показать меню выбора языка."""
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    flag, name = SUPPORTED_LANGS[lang]
+    send_service(
+        chat_id,
+        t("lang_choose", lang, current=f"{flag} {name}"),
+        reply_markup=lang_keyboard(lang),
     )
 
-    save_state(telegram_id, state)
-    ready_cnt = sum(1 for e in events if e.ready_count > 0)
-    log.info(f"[{username}] Готово: {ready_cnt}/{len(events)} событий")
-
-    # ── Сохраняем краткий снимок для админ-панели ─────────────────────────────
-    try:
-        last_scan = {
-            "scanned_at_ms": int(time.time() * 1000),
-            "farm_id": farm_id,
-            "events": [
-                {
-                    "name":           e.name,
-                    "emoji":          e.emoji,
-                    "count":          e.count,
-                    "ready_count":    e.ready_count,
-                    "ready_at_ms":    e.ready_at_ms,
-                    "pending_at_ms":  e.pending_at_ms,
-                }
-                for e in events
-            ],
-        }
-        update_user(telegram_id, last_scan=last_scan)
-    except Exception as e:
-        log.warning(f"[{username}] Не удалось сохранить last_scan: {e}")
-
-    # Возвращаем время и само событие ближайшего ещё не готового события (для предсказания).
-    # Берём только будущие timestamps — прошедшие означают что событие уже готово
-    # но не собрано, уведомление уже отправлено, незачем сканировать снова.
-    now_ms    = int(time.time() * 1000)
-    not_ready = [e for e in events if e.ready_count < e.count and e.ready_at_ms > now_ms]
-    if not_ready:
-        next_event = min(not_ready, key=lambda e: e.ready_at_ms)
-        return next_event.ready_at_ms, next_event
-    return None, None
-
-
-# Кулдауны при 429: telegram_id → время до которого пропускаем пользователя
-_cooldowns: dict = {}
-COOLDOWN_429 = 60  # 1 минута при повторном rate limit (сверх штатного интервала)
-
-# Предсказание: telegram_id → unix-время (секунды) ближайшего события
-_next_scan_at: dict = {}
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-# ОТПРАВКА АЛЕРТА БЕЗ СКАНА (для matrix-режима: ранний подъём)
+# ОБРАБОТЧИК CALLBACK (inline кнопки)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
-    """
-    Отправляет алерт о готовности события не делая запрос к игровому API.
-    Вызывается когда мы проснулись раньше планового скана именно ради этого события.
-    ready_count выставляем в count — таймер истёк, событие готово.
-    """
-    state        = load_state(telegram_id)
-    alerts_state = state.get("ready_alerts", {})
+def handle_callback(callback_query):
+    cq_id    = callback_query["id"]
+    chat_id  = callback_query["from"]["id"]
+    msg_id   = callback_query["message"]["message_id"]
+    data     = callback_query.get("data", "")
 
-    event.ready_count = event.count  # таймер истёк → считаем всё готовым
-    text = format_ready_alert(event)
-    mid  = tg_send(TG_TOKEN, telegram_id, text)
-    if mid:
-        alerts_state[event.name] = {
-            "mid":          mid,
-            "ready_count":  event.ready_count,
-            "count":        event.count,
-            "sent_count":   0,
-            "last_sent_at": time.time(),
-        }
-        state["ready_alerts"] = alerts_state
-        save_state(telegram_id, state)
+    user = get_user(chat_id)
+    if not user:
+        answer_callback(cq_id, t("callback_not_registered", DEFAULT_LANG))
+        return
 
+    lang              = get_lang(user)
+    tracking          = dict(user.get("tracking") or DEFAULT_TRACKING)
+    state             = user.get("state") or {}
+    dynamic_resources = state.get("discovered_resources", [])
+    dynamic_keys      = {d["key"] for d in dynamic_resources}
+    current_tz        = state.get("timezone")
+
+    # ── Смена языка ────────────────────────────────────────────────────────────
+    if data.startswith("set_lang:"):
+        new_lang = data.split(":", 1)[1]
+        if new_lang in SUPPORTED_LANGS:
+            state["lang"] = new_lang
+            update_user(chat_id, state=state)
+            flag, name = SUPPORTED_LANGS[new_lang]
+            answer_callback(cq_id, f"{flag} {name}")
+            edit_text(
+                chat_id, msg_id,
+                t("lang_choose", new_lang, current=f"{flag} {name}"),
+                reply_markup=lang_keyboard(new_lang),
+            )
+        return
+
+    # ── Тоггл отслеживания ────────────────────────────────────────────────────
+    if data.startswith("toggle:"):
+        key = data.split(":", 1)[1]
+        if key in tracking or key in dynamic_keys:
+            tracking[key] = not tracking.get(key, False)
+            update_user(chat_id, tracking=tracking)
+            answer_callback(cq_id)
+            _repeat       = state.get("repeat", {})
+            _repeat_count = int(_repeat.get("count", 1))
+            _repeat_intv  = int(_repeat.get("interval_min", 10))
+            edit_text(
+                chat_id, msg_id,
+                t("settings_title", lang),
+                reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                               _repeat_count, _repeat_intv),
+            )
+        else:
+            answer_callback(cq_id, t("settings_unknown_resource", lang))
+
+    elif data == "tz_menu":
+        answer_callback(cq_id)
+        edit_text(
+            chat_id, msg_id,
+            t("tz_title", lang, current_tz=tz_display_name(current_tz)),
+            reply_markup=tz_keyboard(current_tz, lang),
+        )
+
+    elif data.startswith("set_tz:"):
+        new_tz = data.split(":", 1)[1]
+        state["timezone"] = new_tz
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("tz_saved_toast", lang, tz=tz_display_name(new_tz)))
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, new_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10))),
+        )
+
+    elif data.startswith("repeat_count:"):
+        n = max(0, min(5, int(data.split(":", 1)[1])))
+        state.setdefault("repeat", {})["count"] = n
+        update_user(chat_id, state=state)
+        if n == 0:
+            toast = t("repeat_off_toast", lang)
+        elif data == "repeat_count:2" and int(state.get("repeat", {}).get("count", 1)) == 0:
+            toast = t("repeat_on_toast", lang)
+        else:
+            toast = t("repeat_count_toast", lang, n=n)
+        answer_callback(cq_id, toast)
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, n, int(repeat.get("interval_min", 10))),
+        )
+
+    elif data.startswith("repeat_interval:"):
+        m = int(data.split(":", 1)[1])
+        state.setdefault("repeat", {})["interval_min"] = m
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("repeat_interval_toast", lang, m=m))
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), m),
+        )
+
+    elif data == "repeat_menu":
+        answer_callback(cq_id)
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), int(repeat.get("interval_min", 10))),
+        )
+
+    elif data == "noop":
+        answer_callback(cq_id)
+
+    elif data in ("settings:open", "settings:back"):
+        answer_callback(cq_id)
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10))),
+        )
+
+    elif data == "settings:close":
+        answer_callback(cq_id, t("settings_saved", lang))
+        lines = [
+            f"{'✅' if tracking.get(k) else '❌'} {label}"
+            for k, label in TRACK_LABELS
+        ]
+        for dr in dynamic_resources:
+            icon = "✅" if tracking.get(dr["key"]) else "❌"
+            lines.append(f"{icon} {dr['emoji']} {dr['label']}")
+        repeat = state.get("repeat", {})
+        _rc = int(repeat.get("count", 1))
+        lines.append(f"\n🕐 {tz_display_name(current_tz)}")
+        lines.append(
+            t("repeat_summary_off", lang)
+            if _rc == 0
+            else t("repeat_summary", lang, count=_rc, interval=repeat.get("interval_min", 10))
+        )
+        edit_text(
+            chat_id, msg_id,
+            t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
+        )
+
+
+def handle_clean(chat_id, command_msg_id):
+    """Удалить все сервисные сообщения бота, оставить статус и уведомления."""
+    user = get_user(chat_id)
+    lang = get_lang(user)
+    if not user:
+        send(chat_id, t("not_registered", lang))
+        return
+
+    state = user.get("state") or {}
+
+    # ID сообщений которые нужно сохранить
+    keep_ids = set()
+    status_id = state.get("status_msg_id")
+    if status_id:
+        keep_ids.add(status_id)
+    for alert in state.get("ready_alerts", {}).values():
+        if isinstance(alert, dict) and alert.get("mid"):
+            keep_ids.add(alert["mid"])
+
+    service_ids = state.get("service_msg_ids", [])
+    # Добавляем и саму команду /clean
+    service_ids.append(command_msg_id)
+
+    deleted = 0
+    for mid in service_ids:
+        if mid and mid not in keep_ids:
+            result = tg("deleteMessage", chat_id=chat_id, message_id=mid)
+            if result is not None or result == True:
+                deleted += 1
+
+    state["service_msg_ids"] = []
+    update_user(chat_id, state=state)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ГЛАВНЫЙ ЦИКЛ
+# ДИСПЕТЧЕР ОБНОВЛЕНИЙ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_loop(duration_seconds: int = 21300, request_interval: int = 30):
-    """
-    Основной цикл сканера.
-    duration=21300с (5ч 55м) — чуть меньше лимита GitHub Actions job 6ч.
-    request_interval=15с — минимальный интервал между запросами согласно документации API.
+def dispatch(update):
+    if "callback_query" in update:
+        handle_callback(update["callback_query"])
+        return
 
-    Предсказание: после каждого скана запоминаем ready_at_ms ближайшего события
-    и не делаем API-запрос пока оно не наступило — уведомление приходит точно в момент готовности.
-    """
+    msg = update.get("message")
+    if not msg:
+        return
+
+    chat_id    = msg["chat"]["id"]
+    message_id = msg["message_id"]
+    user_from  = msg.get("from", {})
+    text       = msg.get("text", "").strip()
+
+    if not text:
+        return
+
+    if msg["chat"]["type"] != "private":
+        return
+
+    cmd = text.split()[0].lower().split("@")[0]
+
+    if cmd == "/start":
+        handle_start(chat_id, user_from)
+    elif cmd == "/setfarm":
+        handle_setfarm(chat_id, text)
+    elif cmd == "/setkey":
+        handle_setkey(chat_id, message_id, text)
+    elif cmd == "/settings":
+        handle_settings(chat_id)
+    elif cmd == "/status":
+        handle_status(chat_id)
+    elif cmd == "/stop":
+        handle_stop(chat_id)
+    elif cmd == "/resume":
+        handle_resume(chat_id)
+    elif cmd in ("/lang", "/language", "/setlang"):
+        handle_lang(chat_id)
+    elif cmd in ("/clean", "/clear"):
+        handle_clean(chat_id, message_id)
+    elif cmd in ("/help", "/h"):
+        user = get_user(chat_id)
+        lang = get_lang(user)
+        send_service(chat_id, t("help", lang))
+    else:
+        if text.startswith("/"):
+            user = get_user(chat_id)
+            lang = get_lang(user)
+            send_service(chat_id, t("unknown_command", lang) + t("help", lang))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LONG POLLING ЦИКЛ
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_polling(duration_seconds=21000):
     if not TG_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан!")
         sys.exit(1)
 
-    end_time  = time.time() + duration_seconds
-    iteration = 0
+    log.info(f"Бот запущен (long polling, duration={duration_seconds}s)")
+    tg("deleteWebhook", drop_pending_updates=False)
 
-    log.info(f"Сканер запущен. Duration={duration_seconds}s, request_interval={request_interval}s")
-
-    while time.time() < end_time:
-        iteration += 1
-        remaining = int(end_time - time.time())
-        log.info(f"=== Итерация {iteration}, осталось {remaining}с ===")
-
-        users = get_all_active_users()
-        log.info(f"Активных пользователей: {len(users)}")
-
-        any_scanned = False
-        for user in users:
-            if time.time() >= end_time:
-                break
-            telegram_id = user["telegram_id"]
-            username    = user.get("username") or user.get("first_name") or str(telegram_id)
-
-            cooldown_until = _cooldowns.get(telegram_id, 0)
-            if time.time() < cooldown_until:
-                remaining_cd = int(cooldown_until - time.time())
-                log.info(f"[{username}] Пропуск: rate limit, ещё {remaining_cd}с кулдауна")
-                continue
-
-            next_scheduled = _next_scan_at.get(telegram_id, 0)
-            if time.time() < next_scheduled:
-                next_t = datetime.fromtimestamp(next_scheduled).strftime("%H:%M:%S")
-                log.info(f"[{username}] Пропуск: следующее событие в {next_t}")
-                continue
-
-            try:
-                next_ready_ms, _ = scan_user(user)
-                any_scanned = True
-                if next_ready_ms:
-                    _next_scan_at[telegram_id] = next_ready_ms / 1000
-                    next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
-                    log.info(f"[{username}] Следующий скан запланирован на {next_t}")
-                else:
-                    # Всё готово — проверяем раз в 5 минут
-                    _next_scan_at[telegram_id] = time.time() + 300
-                    log.info(f"[{username}] Всё готово, следующий скан через 5 мин")
-            except Exception as e:
-                if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
-                    _cooldowns[telegram_id] = time.time() + COOLDOWN_429
-                    log.warning(f"[{username}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
-                else:
-                    raise
-
-            # Пауза между запросами к API (только когда реально отправили запрос)
-            sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
-            if sleep_sec > 0:
-                log.info(f"Пауза {int(sleep_sec)}с...")
-                time.sleep(sleep_sec)
-
-        # Если никого не сканировали — спим до ближайшего события, не крутим вхолостую
-        if not any_scanned:
-            now = time.time()
-            all_scheduled = [t for t in _next_scan_at.values() if t > now]
-            cooldown_end  = max(_cooldowns.values(), default=0)
-            candidates    = [*all_scheduled, cooldown_end]
-            wait = max(2.0, min(candidates) - now) if candidates else request_interval
-            wait = min(wait, max(0.0, end_time - now))
-            if wait > 0:
-                log.info(f"Все пользователи пропущены. Сон {int(wait)}с до следующего события...")
-                time.sleep(wait)
-
-    log.info("Сканер завершил работу.")
-
-
-def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
-                  request_interval: int = 30):
-    """
-    Длинный цикл для одного пользователя — для matrix режима GitHub Actions.
-    Каждый matrix job крутит свой цикл ~5ч45м на отдельном runner (= отдельный IP).
-    """
-    if not TG_TOKEN:
-        log.error("TELEGRAM_BOT_TOKEN не задан!")
-        sys.exit(1)
-
+    offset   = 0
     end_time = time.time() + duration_seconds
 
-    log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s, interval={request_interval}s")
-
-    pending_event    = None  # событие которое готово после раннего подъёма
-    last_scan_time   = 0.0   # время последнего scan_user — для соблюдения интервала
-
     while time.time() < end_time:
-        # Перечитываем юзера — tracking/настройки могут меняться через бота
-        user = get_user(telegram_id)
-        if not user or not user.get("active"):
-            log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
-            break
-
-        # ── Ранний подъём: шлём алерт без скана ────────────────────────────
-        if pending_event is not None:
-            log.info(f"[{telegram_id}] Ранний подъём — шлём алерт «{pending_event.name}» без скана")
-            _fire_pending_alert(telegram_id, pending_event)
-            pending_event = None
-            # Доспать оставшееся время до request_interval чтобы не получить 429
-            remaining = request_interval - (time.time() - last_scan_time)
-            if remaining > 0:
-                log.info(f"[{telegram_id}] Ждём {int(remaining)}с до следующего скана...")
-                time.sleep(remaining)
-            continue
-
-        # ── Обычный скан ────────────────────────────────────────────────────
         try:
-            next_ready_ms, next_event = scan_user(user)
+            result = tg(
+                "getUpdates",
+                offset=offset,
+                timeout=30,
+                allowed_updates=["message", "callback_query"],
+            )
+            if not result:
+                continue
+            for update in result:
+                offset = update["update_id"] + 1
+                try:
+                    dispatch(update)
+                except Exception as e:
+                    log.warning(f"dispatch error: {e}")
         except Exception as e:
-            if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
-                log.warning(f"[{telegram_id}] 429 Rate limit на этом IP — выходим для смены runner'а")
-                sys.exit(2)  # Код 2 = rate limited, нужен новый IP
-            else:
-                log.warning(f"[{telegram_id}] Ошибка: {e}")
-            next_ready_ms, next_event = None, None
+            log.warning(f"polling error: {e}")
+            time.sleep(5)
 
-        last_scan_time = time.time()
-
-        # Спим request_interval секунд, но просыпаемся раньше если событие
-        # наступает до следующего планового скана — уведомление придёт точно в срок
-        now = time.time()
-        sleep_sec = request_interval
-        if next_ready_ms:
-            secs_until_event = (next_ready_ms / 1000) - now
-            if 0 < secs_until_event < request_interval:
-                sleep_sec     = max(0, secs_until_event - 3)
-                pending_event = next_event  # запоминаем — после сна пошлём без скана
-                next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
-                log.info(f"[{telegram_id}] Событие «{next_event.name}» в {next_t} — "
-                         f"просыпаемся раньше через {int(sleep_sec)}с, скан пропустим")
-
-        sleep_sec = min(sleep_sec, max(0.0, end_time - now))
-        if sleep_sec > 0:
-            time.sleep(sleep_sec)
-
-    log.info(f"[{telegram_id}] Цикл завершён.")
-
-
-def run_once():
-    """Одиночный прогон — для тестирования."""
-    if not TG_TOKEN:
-        log.error("TELEGRAM_BOT_TOKEN не задан!")
-        sys.exit(1)
-
-    users = get_all_active_users()
-    log.info(f"Активных пользователей: {len(users)}")
-
-    for user in users:
-        scan_user(user)
-
-    log.info("Готово.")
+    log.info("Бот завершил работу (duration истёк, ждём перезапуска от GitHub Actions).")
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="SFL Multi-User Scanner")
-    parser.add_argument("--user", type=int, default=None,
-                        help="Сканировать только одного пользователя (для matrix режима)")
-    parser.add_argument("--once", action="store_true",
-                        help="Один прогон и выход")
-    parser.add_argument("--duration", type=int, default=21300,
-                        help="Длительность основного цикла (секунды)")
-    parser.add_argument("--request-interval", "--interval", type=int, default=30,
-                        help="Пауза между запросами к API (секунды, default: 30)")
+    parser = argparse.ArgumentParser(description="SFL Telegram Bot")
+    parser.add_argument("--duration", type=int, default=21000,
+                        help="Длительность работы бота (секунды)")
     args = parser.parse_args()
-
-    if args.user:
-        run_loop_user(args.user, duration_seconds=args.duration,
-                      request_interval=args.request_interval)
-    elif args.once:
-        run_once()
-    else:
-        run_loop(duration_seconds=args.duration, request_interval=args.request_interval)
+    run_polling(duration_seconds=args.duration)
