@@ -496,8 +496,9 @@ def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
          "callback_data": f"repeat_interval:{m}"}
         for m in (5, 10, 15, 30)
     ]
-    rows = [off_row, count_row]
+    rows = [off_row]
     if repeat_count > 0:
+        rows.append(count_row)
         rows.append(interval_row)
     rows.append([{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}])
     return {"inline_keyboard": rows}
