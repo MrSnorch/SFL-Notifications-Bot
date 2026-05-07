@@ -232,7 +232,7 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
 # ГЛАВНЫЙ ЦИКЛ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
+def run_loop(duration_seconds: int = 21300, request_interval: int = 30):
     """
     Основной цикл сканера.
     duration=21300с (5ч 55м) — чуть меньше лимита GitHub Actions job 6ч.
@@ -317,7 +317,7 @@ def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
 
 
 def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
-                  request_interval: int = 15):
+                  request_interval: int = 30):
     """
     Длинный цикл для одного пользователя — для matrix режима GitHub Actions.
     Каждый matrix job крутит свой цикл ~5ч45м на отдельном runner (= отдельный IP).
@@ -402,8 +402,8 @@ if __name__ == "__main__":
                         help="Один прогон и выход")
     parser.add_argument("--duration", type=int, default=21300,
                         help="Длительность основного цикла (секунды)")
-    parser.add_argument("--request-interval", "--interval", type=int, default=15,
-                        help="Пауза между запросами к API (секунды, default: 15 — минимум по документации)")
+    parser.add_argument("--request-interval", "--interval", type=int, default=30,
+                        help="Пауза между запросами к API (секунды, default: 30)")
     args = parser.parse_args()
 
     if args.user:
