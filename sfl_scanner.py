@@ -100,6 +100,12 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                         "last_sent_at": now,
                     }
                     log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
+            elif sent >= repeat_count:
+                log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{repeat_count})")
+            else:
+                remaining = int(repeat_interval_sec - (now - last_sent))
+                log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
+                          f"(отправлено {sent}/{repeat_count})")
 
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
@@ -175,7 +181,7 @@ def scan_user(user: dict) -> "int | None":
 
     # ── Алерты о готовности (пингуют) ────────────────────────────────────────
     repeat          = state.get("repeat", {})
-    repeat_count    = max(1, min(5, int(repeat.get("count", 1))))
+    repeat_count    = max(0, min(5, int(repeat.get("count", 2))))
     repeat_interval = int(repeat.get("interval_min", 10)) * 60
     state["ready_alerts"] = process_ready_alerts(
         telegram_id, events, alerts_state,
