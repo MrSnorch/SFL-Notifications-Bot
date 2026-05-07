@@ -212,13 +212,23 @@ STRINGS = {
         "en": "Unknown resource",
         "uk": "Невідомий ресурс",
     },
+    "repeat_btn_label": {
+        "ru": "🔁 Повторы: {count}× / {interval}м",
+        "en": "🔁 Repeats: {count}× / {interval}m",
+        "uk": "🔁 Повтори: {count}× / {interval}хв",
+    },
+    "repeat_menu_title": {
+        "ru": "🔁 <b>Повтор уведомлений</b>\n\nЕсли не собрал — напомним ещё раз.",
+        "en": "🔁 <b>Repeat notifications</b>\n\nWe'll remind you again if not collected.",
+        "uk": "🔁 <b>Повтор сповіщень</b>\n\nНагадаємо ще раз, якщо не зібрав.",
+    },
     "repeat_count_label": {
         "ru": "🔁 Повторов:",
         "en": "🔁 Repeats:",
         "uk": "🔁 Повторів:",
     },
     "repeat_interval_label": {
-        "ru": "⏳ Интервал:",
+        "ru": "⏳ Інтервал:",
         "en": "⏳ Interval:",
         "uk": "⏳ Інтервал:",
     },
@@ -451,7 +461,25 @@ def tz_keyboard(current_tz, lang):
     return {"inline_keyboard": buttons}
 
 
-def settings_keyboard(tracking, dynamic_resources=None, current_tz=None, lang=DEFAULT_LANG,
+def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
+    """Подменю настройки повторных уведомлений."""
+    count_row = [
+        {"text": f"{'✅' if n == repeat_count else str(n)}×", "callback_data": f"repeat_count:{n}"}
+        for n in range(1, 6)
+    ]
+    interval_row = [
+        {"text": f"{'✅' if m == repeat_interval_min else str(m)}{'м' if lang != 'en' else 'm'}",
+         "callback_data": f"repeat_interval:{m}"}
+        for m in (5, 10, 15, 30)
+    ]
+    return {"inline_keyboard": [
+        count_row,
+        interval_row,
+        [{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}],
+    ]}
+
+
+
                       repeat_count=3, repeat_interval_min=10):
     """Inline-клавиатура для /settings."""
     buttons = []
@@ -469,17 +497,10 @@ def settings_keyboard(tracking, dynamic_resources=None, current_tz=None, lang=DE
         "text": t("tz_btn_label", lang, tz=tz_label),
         "callback_data": "tz_menu",
     }])
-    # Повтор уведомлений
-    count_row = [
-        {"text": f"{'🔔' if n == repeat_count else str(n)}×", "callback_data": f"repeat_count:{n}"}
-        for n in range(1, 6)
-    ]
-    buttons.append([{"text": t("repeat_count_label", lang), "callback_data": "noop"}] + count_row)
-    interval_row = [
-        {"text": f"{'⏱' if m == repeat_interval_min else ''}{m}{'м' if lang != 'en' else 'm'}", "callback_data": f"repeat_interval:{m}"}
-        for m in (5, 10, 15, 30)
-    ]
-    buttons.append([{"text": t("repeat_interval_label", lang), "callback_data": "noop"}] + interval_row)
+    buttons.append([{
+        "text": t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min),
+        "callback_data": "repeat_menu",
+    }])
     buttons.append([{
         "text": t("settings_btn_save", lang),
         "callback_data": "settings:close",
@@ -727,9 +748,8 @@ def handle_callback(callback_query):
         repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
-            t("settings_title", lang),
-            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                                           n, int(repeat.get("interval_min", 10))),
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, n, int(repeat.get("interval_min", 10))),
         )
 
     elif data.startswith("repeat_interval:"):
@@ -740,9 +760,17 @@ def handle_callback(callback_query):
         repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
-            t("settings_title", lang),
-            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                                           int(repeat.get("count", 1)), m),
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), m),
+        )
+
+    elif data == "repeat_menu":
+        answer_callback(cq_id)
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_menu_title", lang),
+            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), int(repeat.get("interval_min", 10))),
         )
 
     elif data == "noop":
