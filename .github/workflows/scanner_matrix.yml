@@ -19,11 +19,12 @@ permissions:
   actions: write
 
 # Только один полный прогон одновременно.
-# cancel-in-progress: true — новый ран убивает старый (per-user concurrency
-# в scan-джобах подхватывает и отменяет отдельные jobs).
+# cancel-in-progress: false — новый ран встаёт в очередь, не убивает активный.
+# GitHub держит max 1 активный + 1 ожидающий: если в очереди уже есть ожидающий,
+# он заменяется новым (старый pending отменяется). Крон не прерывает активный скан.
 concurrency:
   group: sfl-full-run
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ── Шаг 1: список юзеров ──────────────────────────────────────────────────
