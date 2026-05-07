@@ -1,0 +1,76 @@
+name: SFL Scanner Matrix
+
+# Запускает каждого пользователя на отдельном runner (отдельный IP).
+# Помогает обойти IP-based rate limiting SFL API.
+#
+# Архитектура:
+#   prepare → получает список активных telegram_id из Supabase
+#   scan    → matrix job, по одному на каждый аккаунт, разные runner'ы = разные IP
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # Каждые 5 минут
+  workflow_dispatch:
+
+concurrency:
+  group: sfl-scanner-matrix
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Шаг 1: получаем список пользователей ──────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.get_users.outputs.matrix }}
+      has_users: ${{ steps.get_users.outputs.has_users }}
+    steps:
+      - name: Fetch active telegram_ids from Supabase
+        id: get_users
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          USERS=$(curl -sf \
+            "${SUPABASE_URL}/rest/v1/users?active=eq.true&select=telegram_id" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            | python3 -c "import sys,json; ids=[str(u['telegram_id']) for u in json.load(sys.stdin)]; print(json.dumps(ids))")
+
+          echo "matrix={\"telegram_id\":${USERS}}" >> $GITHUB_OUTPUT
+
+          COUNT=$(echo "$USERS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          echo "has_users=$([ $COUNT -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "Активных пользователей: $COUNT"
+
+  # ── Шаг 2: сканируем каждого на своём runner ──────────────────────────────
+  scan:
+    needs: prepare
+    if: needs.prepare.outputs.has_users == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false   # Падение одного job не останавливает остальные
+    timeout-minutes: 6
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Scan user ${{ matrix.telegram_id }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+        run: python sfl_scanner.py --user ${{ matrix.telegram_id }}
