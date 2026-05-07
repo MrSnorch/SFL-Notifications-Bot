@@ -323,7 +323,9 @@ def get_lang(user):
 
 def tg(method, **kwargs):
     try:
-        r = requests.post(f"{API_BASE}/{method}", json=kwargs, timeout=20)
+        polling_timeout = kwargs.get("timeout", 0)
+        http_timeout = polling_timeout + 10 if polling_timeout else 20
+        r = requests.post(f"{API_BASE}/{method}", json=kwargs, timeout=http_timeout)
         if r.ok:
             return r.json().get("result")
         log.warning(f"TG {method} failed: {r.status_code} {r.text[:200]}")
