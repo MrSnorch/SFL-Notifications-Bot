@@ -1,48 +1,61 @@
 name: SFL Scanner Matrix
 
-# Каждый пользователь получает свой runner (= свой IP) на ~5ч45м.
-# В конце restart пересобирает матрикс — подхватывает новых/удалённых юзеров.
-# Cron — только страховка если self-restart не сработал.
+# Каждый пользователь — отдельный runner (= отдельный IP), цикл ~5ч45м.
+# При 429: python выходит с кодом 2 → job запускает этого юзера заново на новом IP.
+# Per-user concurrency: retry одного юзера не убивает остальных.
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # Страховочный cron раз в 6ч
+    - cron: '0 */6 * * *'   # Страховка
   workflow_dispatch:
+    inputs:
+      single_user:
+        description: 'Перезапустить только этого telegram_id (для retry после 429)'
+        required: false
+        default: ''
 
 concurrency:
-  group: sfl-scanner-matrix
-  cancel-in-progress: true
+  group: sfl-matrix-coordinator
+  cancel-in-progress: true  # Только для prepare/restart — не трогает scan-джобы
 
 permissions:
   contents: read
   actions: write
 
 jobs:
-  # ── Шаг 1: получаем актуальный список пользователей ───────────────────────
+  # ── Шаг 1: список юзеров ──────────────────────────────────────────────────
   prepare:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.get_users.outputs.matrix }}
       has_users: ${{ steps.get_users.outputs.has_users }}
     steps:
-      - name: Fetch active telegram_ids from Supabase
+      - name: Build user matrix
         id: get_users
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SINGLE_USER:  ${{ inputs.single_user }}
         run: |
-          USERS=$(curl -sf \
-            "${SUPABASE_URL}/rest/v1/users?active=eq.true&select=telegram_id" \
-            -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            | python3 -c "import sys,json; ids=[str(u['telegram_id']) for u in json.load(sys.stdin)]; print(json.dumps(ids))")
+          if [ -n "$SINGLE_USER" ]; then
+            # Точечный перезапуск после 429 — только один юзер
+            USERS="[\"$SINGLE_USER\"]"
+            echo "Перезапуск для юзера: $SINGLE_USER"
+          else
+            # Полный старт — все активные юзеры
+            USERS=$(curl -sf \
+              "${SUPABASE_URL}/rest/v1/users?active=eq.true&select=telegram_id" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              | python3 -c "import sys,json; ids=[str(u['telegram_id']) for u in json.load(sys.stdin)]; print(json.dumps(ids))")
+          fi
 
           COUNT=$(echo "$USERS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
           echo "matrix={\"telegram_id\":${USERS}}" >> $GITHUB_OUTPUT
           echo "has_users=$([ $COUNT -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
-          echo "Активных пользователей: $COUNT"
+          echo "Юзеров в матрице: $COUNT"
 
-  # ── Шаг 2: каждый юзер крутит свой цикл ~5ч45м на отдельном runner ────────
+  # ── Шаг 2: цикл ~5ч45м на отдельном runner ────────────────────────────────
   scan:
     needs: prepare
     if: needs.prepare.outputs.has_users == 'true'
@@ -50,7 +63,12 @@ jobs:
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
-    timeout-minutes: 355   # 5ч 55м — как в оригинальном scanner.yml
+    timeout-minutes: 355
+
+    # Per-user concurrency: retry юзера X отменяет только старый job юзера X
+    concurrency:
+      group: sfl-user-${{ matrix.telegram_id }}
+      cancel-in-progress: true
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -66,6 +84,8 @@ jobs:
         run: pip install requests
 
       - name: Run loop for user ${{ matrix.telegram_id }}
+        id: scan
+        continue-on-error: true  # Не фейлим workflow при exit(2)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
@@ -75,14 +95,31 @@ jobs:
             --user ${{ matrix.telegram_id }} \
             --duration 20700 \
             --interval 15
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
 
-  # ── Шаг 3: пересобираем матрикс (подхватит новых юзеров) ──────────────────
+      # Если вышли с кодом 2 (429) — запускаем этого юзера на новом runner'е
+      - name: Retry on new IP if rate limited
+        if: steps.scan.outputs.exit_code == '2'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔄 429 на этом IP, перезапускаем юзера ${{ matrix.telegram_id }} на новом runner'е..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"single_user\":\"${{ matrix.telegram_id }}\"}}" \
+            && echo "✅ Retry triggered" \
+            || echo "⚠️ Failed to trigger retry"
+
+  # ── Шаг 3: self-restart для полного цикла (только при полном запуске) ──────
   restart:
     needs: scan
-    if: always()
+    # Не рестартуем если это был точечный retry отдельного юзера
+    if: always() && inputs.single_user == ''
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger next matrix run
+      - name: Trigger next full matrix run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -91,5 +128,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
             -d "{\"ref\":\"${{ github.ref_name }}\"}" \
-            && echo "✅ Next run triggered" \
+            && echo "✅ Next full run triggered" \
             || echo "⚠️ Failed (cron will catch it)"
