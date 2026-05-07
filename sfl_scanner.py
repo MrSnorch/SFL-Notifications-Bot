@@ -234,11 +234,10 @@ def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
                     else:
                         raise
 
-            if i < len(users) - 1:
-                sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
-                if sleep_sec > 0:
-                    log.info(f"Пауза {int(sleep_sec)}с перед следующим пользователем...")
-                    time.sleep(sleep_sec)
+            sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
+            if sleep_sec > 0:
+                log.info(f"Пауза {int(sleep_sec)}с...")
+                time.sleep(sleep_sec)
 
     log.info("Сканер завершил работу.")
 
