@@ -183,12 +183,15 @@ def scan_user(user: dict) -> "int | None":
     except Exception as e:
         log.warning(f"[{username}] Не удалось сохранить last_scan: {e}")
 
-    # Возвращаем время ближайшего ещё не готового события (для предсказания).
+    # Возвращаем время и само событие ближайшего ещё не готового события (для предсказания).
     # Берём только будущие timestamps — прошедшие означают что событие уже готово
     # но не собрано, уведомление уже отправлено, незачем сканировать снова.
     now_ms    = int(time.time() * 1000)
     not_ready = [e for e in events if e.ready_count < e.count and e.ready_at_ms > now_ms]
-    return min((e.ready_at_ms for e in not_ready), default=None)
+    if not_ready:
+        next_event = min(not_ready, key=lambda e: e.ready_at_ms)
+        return next_event.ready_at_ms, next_event
+    return None, None
 
 
 # Кулдауны при 429: telegram_id → время до которого пропускаем пользователя
@@ -197,6 +200,32 @@ COOLDOWN_429 = 60  # 1 минута при повторном rate limit (све
 
 # Предсказание: telegram_id → unix-время (секунды) ближайшего события
 _next_scan_at: dict = {}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ОТПРАВКА АЛЕРТА БЕЗ СКАНА (для matrix-режима: ранний подъём)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
+    """
+    Отправляет алерт о готовности события не делая запрос к игровому API.
+    Вызывается когда мы проснулись раньше планового скана именно ради этого события.
+    ready_count выставляем в count — таймер истёк, событие готово.
+    """
+    state        = load_state(telegram_id)
+    alerts_state = state.get("ready_alerts", {})
+
+    event.ready_count = event.count  # таймер истёк → считаем всё готовым
+    text = format_ready_alert(event)
+    mid  = tg_send(TG_TOKEN, telegram_id, text)
+    if mid:
+        alerts_state[event.name] = {
+            "mid":         mid,
+            "ready_count": event.ready_count,
+            "count":       event.count,
+        }
+        state["ready_alerts"] = alerts_state
+        save_state(telegram_id, state)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -249,7 +278,7 @@ def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
                 continue
 
             try:
-                next_ready_ms = scan_user(user)
+                next_ready_ms, _ = scan_user(user)
                 any_scanned = True
                 if next_ready_ms:
                     _next_scan_at[telegram_id] = next_ready_ms / 1000
@@ -301,6 +330,8 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
 
     log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s, interval={request_interval}s")
 
+    pending_event = None  # событие которое готово после раннего подъёма
+
     while time.time() < end_time:
         # Перечитываем юзера — tracking/настройки могут меняться через бота
         user = get_user(telegram_id)
@@ -308,15 +339,24 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
             log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
             break
 
+        # ── Ранний подъём: шлём алерт без скана ────────────────────────────
+        if pending_event is not None:
+            log.info(f"[{telegram_id}] Ранний подъём — шлём алерт «{pending_event.name}» без скана")
+            _fire_pending_alert(telegram_id, pending_event)
+            pending_event = None
+            # После алерта сразу идём на следующую итерацию (полный скан)
+            continue
+
+        # ── Обычный скан ────────────────────────────────────────────────────
         try:
-            next_ready_ms = scan_user(user)
+            next_ready_ms, next_event = scan_user(user)
         except Exception as e:
             if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
                 log.warning(f"[{telegram_id}] 429 Rate limit на этом IP — выходим для смены runner'а")
                 sys.exit(2)  # Код 2 = rate limited, нужен новый IP
             else:
                 log.warning(f"[{telegram_id}] Ошибка: {e}")
-            next_ready_ms = None
+            next_ready_ms, next_event = None, None
 
         # Спим request_interval секунд, но просыпаемся раньше если событие
         # наступает до следующего планового скана — уведомление придёт точно в срок
@@ -325,9 +365,11 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
         if next_ready_ms:
             secs_until_event = (next_ready_ms / 1000) - now
             if 0 < secs_until_event < request_interval:
-                sleep_sec = secs_until_event
+                sleep_sec     = secs_until_event
+                pending_event = next_event  # запоминаем — после сна пошлём без скана
                 next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
-                log.info(f"[{telegram_id}] Событие в {next_t} — просыпаемся раньше через {int(sleep_sec)}с")
+                log.info(f"[{telegram_id}] Событие «{next_event.name}» в {next_t} — "
+                         f"просыпаемся раньше через {int(sleep_sec)}с, скан пропустим")
 
         sleep_sec = min(sleep_sec, max(0.0, end_time - now))
         if sleep_sec > 0:
