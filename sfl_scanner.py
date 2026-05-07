@@ -328,8 +328,8 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
                 next_scan_at = time.time() + request_interval
         except Exception as e:
             if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
-                cooldown_until = time.time() + COOLDOWN_429
-                log.warning(f"[{telegram_id}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
+                log.warning(f"[{telegram_id}] 429 Rate limit на этом IP — выходим для смены runner'а")
+                sys.exit(2)  # Код 2 = rate limited, нужен новый IP
             else:
                 log.warning(f"[{telegram_id}] Ошибка: {e}")
                 next_scan_at = time.time() + request_interval
