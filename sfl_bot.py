@@ -217,6 +217,21 @@ STRINGS = {
         "en": "🔁 Repeats: {count}× / {interval}m",
         "uk": "🔁 Повтори: {count}× / {interval}хв",
     },
+    "repeat_btn_off_label": {
+        "ru": "🔕 Повторы: выкл",
+        "en": "🔕 Repeats: off",
+        "uk": "🔕 Повтори: вимк",
+    },
+    "repeat_off_btn": {
+        "ru": "🔕 Выкл",
+        "en": "🔕 Off",
+        "uk": "🔕 Вимк",
+    },
+    "repeat_off_toast": {
+        "ru": "🔕 Повторы отключены",
+        "en": "🔕 Repeats disabled",
+        "uk": "🔕 Повтори вимкнено",
+    },
     "repeat_menu_title": {
         "ru": "🔁 <b>Повтор уведомлений</b>\n\nЕсли не собрал — напомним ещё раз.",
         "en": "🔁 <b>Repeat notifications</b>\n\nWe'll remind you again if not collected.",
@@ -246,6 +261,11 @@ STRINGS = {
         "ru": "🔁 Повторов: {count}× / каждые {interval}м",
         "en": "🔁 Repeats: {count}× / every {interval}m",
         "uk": "🔁 Повторів: {count}× / кожні {interval}хв",
+    },
+    "repeat_summary_off": {
+        "ru": "🔕 Повторы: выкл",
+        "en": "🔕 Repeats: off",
+        "uk": "🔕 Повтори: вимк",
     },
     "status_no_farm": {
         "ru": "❌ Ферма не настроена.\nИспользуй /setfarm и /setkey",
@@ -463,20 +483,24 @@ def tz_keyboard(current_tz, lang):
 
 def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
     """Подменю настройки повторных уведомлений."""
+    off_row = [
+        {"text": f"{'✅ ' if repeat_count == 0 else ''}{t('repeat_off_btn', lang)}",
+         "callback_data": "repeat_count:0"},
+    ]
     count_row = [
-        {"text": f"{'✅' if n == repeat_count else str(n)}×", "callback_data": f"repeat_count:{n}"}
+        {"text": f"{'✅ ' if n == repeat_count else ''}{n}×", "callback_data": f"repeat_count:{n}"}
         for n in range(1, 6)
     ]
     interval_row = [
-        {"text": f"{'✅' if m == repeat_interval_min else str(m)}{'м' if lang != 'en' else 'm'}",
+        {"text": f"{'✅ ' if m == repeat_interval_min else ''}{m}{'м' if lang != 'en' else 'm'}",
          "callback_data": f"repeat_interval:{m}"}
         for m in (5, 10, 15, 30)
     ]
-    return {"inline_keyboard": [
-        count_row,
-        interval_row,
-        [{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}],
-    ]}
+    rows = [off_row, count_row]
+    if repeat_count > 0:
+        rows.append(interval_row)
+    rows.append([{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}])
+    return {"inline_keyboard": rows}
 
 
 
@@ -498,8 +522,13 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
         "text": t("tz_btn_label", lang, tz=tz_label),
         "callback_data": "tz_menu",
     }])
+    repeat_label = (
+        t("repeat_btn_off_label", lang)
+        if repeat_count == 0
+        else t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min)
+    )
     buttons.append([{
-        "text": t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min),
+        "text": repeat_label,
         "callback_data": "repeat_menu",
     }])
     buttons.append([{
@@ -746,10 +775,11 @@ def handle_callback(callback_query):
         )
 
     elif data.startswith("repeat_count:"):
-        n = max(1, min(5, int(data.split(":", 1)[1])))
+        n = max(0, min(5, int(data.split(":", 1)[1])))
         state.setdefault("repeat", {})["count"] = n
         update_user(chat_id, state=state)
-        answer_callback(cq_id, t("repeat_count_toast", lang, n=n))
+        toast = t("repeat_off_toast", lang) if n == 0 else t("repeat_count_toast", lang, n=n)
+        answer_callback(cq_id, toast)
         repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
@@ -802,8 +832,13 @@ def handle_callback(callback_query):
             icon = "✅" if tracking.get(dr["key"]) else "❌"
             lines.append(f"{icon} {dr['emoji']} {dr['label']}")
         repeat = state.get("repeat", {})
+        _rc = int(repeat.get("count", 1))
         lines.append(f"\n🕐 {tz_display_name(current_tz)}")
-        lines.append(t("repeat_summary", lang, count=repeat.get("count", 1), interval=repeat.get("interval_min", 10)))
+        lines.append(
+            t("repeat_summary_off", lang)
+            if _rc == 0
+            else t("repeat_summary", lang, count=_rc, interval=repeat.get("interval_min", 10))
+        )
         edit_text(
             chat_id, msg_id,
             t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
