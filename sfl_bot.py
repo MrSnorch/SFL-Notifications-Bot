@@ -227,10 +227,20 @@ STRINGS = {
         "en": "🔕 Off",
         "uk": "🔕 Вимк",
     },
+    "repeat_on_btn": {
+        "ru": "🔔 Вкл",
+        "en": "🔔 On",
+        "uk": "🔔 Увімк",
+    },
     "repeat_off_toast": {
         "ru": "🔕 Повторы отключены",
         "en": "🔕 Repeats disabled",
         "uk": "🔕 Повтори вимкнено",
+    },
+    "repeat_on_toast": {
+        "ru": "🔔 Повторы включены",
+        "en": "🔔 Repeats enabled",
+        "uk": "🔔 Повтори увімкнено",
     },
     "repeat_menu_title": {
         "ru": "🔁 <b>Повтор уведомлений</b>\n\nЕсли не собрал — напомним ещё раз.",
@@ -483,10 +493,10 @@ def tz_keyboard(current_tz, lang):
 
 def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
     """Подменю настройки повторных уведомлений."""
-    off_row = [
-        {"text": f"{'✅ ' if repeat_count == 0 else ''}{t('repeat_off_btn', lang)}",
-         "callback_data": "repeat_count:0"},
-    ]
+    if repeat_count == 0:
+        off_row = [{"text": t("repeat_on_btn", lang), "callback_data": "repeat_count:2"}]
+    else:
+        off_row = [{"text": t("repeat_off_btn", lang), "callback_data": "repeat_count:0"}]
     count_row = [
         {"text": f"{'✅ ' if n == repeat_count else ''}{n}×", "callback_data": f"repeat_count:{n}"}
         for n in range(1, 6)
@@ -779,7 +789,12 @@ def handle_callback(callback_query):
         n = max(0, min(5, int(data.split(":", 1)[1])))
         state.setdefault("repeat", {})["count"] = n
         update_user(chat_id, state=state)
-        toast = t("repeat_off_toast", lang) if n == 0 else t("repeat_count_toast", lang, n=n)
+        if n == 0:
+            toast = t("repeat_off_toast", lang)
+        elif data == "repeat_count:2" and int(state.get("repeat", {}).get("count", 1)) == 0:
+            toast = t("repeat_on_toast", lang)
+        else:
+            toast = t("repeat_count_toast", lang, n=n)
         answer_callback(cq_id, toast)
         repeat = state.get("repeat", {})
         edit_text(
