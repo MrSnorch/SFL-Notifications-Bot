@@ -330,7 +330,8 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
 
     log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s, interval={request_interval}s")
 
-    pending_event = None  # событие которое готово после раннего подъёма
+    pending_event    = None  # событие которое готово после раннего подъёма
+    last_scan_time   = 0.0   # время последнего scan_user — для соблюдения интервала
 
     while time.time() < end_time:
         # Перечитываем юзера — tracking/настройки могут меняться через бота
@@ -344,7 +345,11 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
             log.info(f"[{telegram_id}] Ранний подъём — шлём алерт «{pending_event.name}» без скана")
             _fire_pending_alert(telegram_id, pending_event)
             pending_event = None
-            # После алерта сразу идём на следующую итерацию (полный скан)
+            # Доспать оставшееся время до request_interval чтобы не получить 429
+            remaining = request_interval - (time.time() - last_scan_time)
+            if remaining > 0:
+                log.info(f"[{telegram_id}] Ждём {int(remaining)}с до следующего скана...")
+                time.sleep(remaining)
             continue
 
         # ── Обычный скан ────────────────────────────────────────────────────
@@ -358,6 +363,8 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
                 log.warning(f"[{telegram_id}] Ошибка: {e}")
             next_ready_ms, next_event = None, None
 
+        last_scan_time = time.time()
+
         # Спим request_interval секунд, но просыпаемся раньше если событие
         # наступает до следующего планового скана — уведомление придёт точно в срок
         now = time.time()
@@ -365,7 +372,7 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
         if next_ready_ms:
             secs_until_event = (next_ready_ms / 1000) - now
             if 0 < secs_until_event < request_interval:
-                sleep_sec     = secs_until_event
+                sleep_sec     = max(0, secs_until_event - 3)
                 pending_event = next_event  # запоминаем — после сна пошлём без скана
                 next_t = datetime.fromtimestamp(next_ready_ms / 1000).strftime("%H:%M:%S")
                 log.info(f"[{telegram_id}] Событие «{next_event.name}» в {next_t} — "
