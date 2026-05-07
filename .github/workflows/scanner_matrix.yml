@@ -18,6 +18,13 @@ permissions:
   contents: read
   actions: write
 
+# Только один полный прогон одновременно.
+# cancel-in-progress: true — новый ран убивает старый (per-user concurrency
+# в scan-джобах подхватывает и отменяет отдельные jobs).
+concurrency:
+  group: sfl-full-run
+  cancel-in-progress: true
+
 jobs:
   # ── Шаг 1: список юзеров ──────────────────────────────────────────────────
   prepare:
@@ -115,7 +122,7 @@ jobs:
   restart:
     needs: scan
     # Не рестартуем если это был точечный retry отдельного юзера
-    if: always() && inputs.single_user == ''
+    if: needs.scan.result != 'skipped' && inputs.single_user == ''
     runs-on: ubuntu-latest
     concurrency:
       group: sfl-matrix-restart
