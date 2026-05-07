@@ -282,20 +282,63 @@ def run_loop(duration_seconds: int = 21300, request_interval: int = 15):
     log.info("Сканер завершил работу.")
 
 
-def run_once_user(telegram_id: int):
-    """Сканирует одного пользователя по telegram_id — для matrix режима GitHub Actions."""
+def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
+                  request_interval: int = 15):
+    """
+    Длинный цикл для одного пользователя — для matrix режима GitHub Actions.
+    Каждый matrix job крутит свой цикл ~5ч45м на отдельном runner (= отдельный IP).
+    """
     if not TG_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан!")
         sys.exit(1)
-    user = get_user(telegram_id)
-    if not user:
-        log.error(f"Пользователь {telegram_id} не найден")
-        sys.exit(1)
-    if not user.get("active"):
-        log.info(f"Пользователь {telegram_id} не активен, пропуск.")
-        return
-    scan_user(user)
-    log.info(f"Готово: пользователь {telegram_id}")
+
+    end_time       = time.time() + duration_seconds
+    next_scan_at   = 0.0   # unix-секунды когда делать следующий запрос
+    cooldown_until = 0.0
+
+    log.info(f"[{telegram_id}] Цикл запущен. Duration={duration_seconds}s")
+
+    while time.time() < end_time:
+        # Перечитываем юзера — tracking/настройки могут меняться через бота
+        user = get_user(telegram_id)
+        if not user or not user.get("active"):
+            log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
+            break
+
+        now = time.time()
+
+        if now < cooldown_until:
+            wait = min(cooldown_until - now, end_time - now)
+            log.info(f"[{telegram_id}] Rate limit, ждём {int(wait)}с...")
+            time.sleep(max(1.0, wait))
+            continue
+
+        if now < next_scan_at:
+            next_t = datetime.fromtimestamp(next_scan_at).strftime("%H:%M:%S")
+            wait   = min(next_scan_at - now, end_time - now)
+            log.info(f"[{telegram_id}] Следующее событие в {next_t}, ждём {int(wait)}с...")
+            time.sleep(max(1.0, wait))
+            continue
+
+        try:
+            next_ready_ms = scan_user(user)
+            if next_ready_ms:
+                next_scan_at = next_ready_ms / 1000
+            else:
+                next_scan_at = time.time() + request_interval
+        except Exception as e:
+            if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
+                cooldown_until = time.time() + COOLDOWN_429
+                log.warning(f"[{telegram_id}] 429 Rate limit — кулдаун {COOLDOWN_429}с")
+            else:
+                log.warning(f"[{telegram_id}] Ошибка: {e}")
+                next_scan_at = time.time() + request_interval
+
+        sleep_sec = min(request_interval, max(0.0, end_time - time.time()))
+        if sleep_sec > 0:
+            time.sleep(sleep_sec)
+
+    log.info(f"[{telegram_id}] Цикл завершён.")
 
 
 def run_once():
@@ -327,7 +370,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.user:
-        run_once_user(args.user)
+        run_loop_user(args.user, duration_seconds=args.duration,
+                      request_interval=args.request_interval)
     elif args.once:
         run_once()
     else:
