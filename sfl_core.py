@@ -872,15 +872,16 @@ def tg_send(token: str, chat_id: int, text: str,
     return None
 
 def tg_edit(token: str, chat_id: int, message_id: int, text: str) -> bool:
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/editMessageText",
-            json={"chat_id": chat_id, "message_id": message_id,
-                  "text": text, "parse_mode": "HTML"},
-            timeout=20)
-        return r.ok
-    except Exception:
-        return False
+    """Редактирует сообщение. Возвращает True при успехе.
+    При сетевой ошибке (таймаут и т.п.) бросает исключение наверх —
+    чтобы вызывающий код не путал «сообщение удалено» с «сеть недоступна»
+    и не слал новое сообщение зря."""
+    r = requests.post(
+        f"https://api.telegram.org/bot{token}/editMessageText",
+        json={"chat_id": chat_id, "message_id": message_id,
+              "text": text, "parse_mode": "HTML"},
+        timeout=20)
+    return r.ok
 
 def tg_delete(token: str, chat_id: int, message_id: int):
     try:
@@ -920,9 +921,18 @@ def tg_unpin_message(token: str, chat_id: int, message_id: int) -> bool:
 def tg_upsert_status(token: str, chat_id: int, text: str,
                      message_id: int | None) -> tuple[int, bool]:
     """Создаёт или редактирует статус-сообщение.
-    Возвращает (message_id, is_new) — is_new=True если создано новое сообщение."""
+    Возвращает (message_id, is_new) — is_new=True если создано новое сообщение.
+
+    tg_edit бросает исключение при сетевых ошибках (таймаут и т.п.) —
+    в этом случае мы НЕ шлём новое сообщение, чтобы не плодить дубли закрепа.
+    Новое сообщение создаётся только при HTTP-ошибке (message deleted/not found).
+    """
     if message_id:
-        if tg_edit(token, chat_id, message_id, text):
-            return message_id, False
+        try:
+            if tg_edit(token, chat_id, message_id, text):
+                return message_id, False
+        except Exception as e:
+            log.warning(f"tg_edit network error (skip send): {e}")
+            return message_id, False  # сеть упала — старый mid оставляем, не трогаем закреп
     mid = tg_send(token, chat_id, text, silent=True)
     return (mid or message_id or 0), True
