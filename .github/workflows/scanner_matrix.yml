@@ -101,7 +101,7 @@ jobs:
           python sfl_scanner.py \
             --user ${{ matrix.telegram_id }} \
             --duration 20700 \
-            --interval 15
+            --interval 30
           echo "exit_code=$?" >> $GITHUB_OUTPUT
 
       # Если вышли с кодом 2 (429) — запускаем этого юзера на новом runner'е
