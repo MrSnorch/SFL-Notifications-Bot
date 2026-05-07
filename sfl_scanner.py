@@ -265,7 +265,7 @@ if __name__ == "__main__":
                         help="Один прогон и выход")
     parser.add_argument("--duration", type=int, default=21300,
                         help="Длительность основного цикла (секунды)")
-    parser.add_argument("--request-interval", type=int, default=15,
+    parser.add_argument("--request-interval", "--interval", type=int, default=15,
                         help="Пауза между запросами к API (секунды, default: 15 — минимум по документации)")
     args = parser.parse_args()
 
