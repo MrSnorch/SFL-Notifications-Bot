@@ -14,10 +14,6 @@ on:
         required: false
         default: ''
 
-concurrency:
-  group: sfl-matrix-coordinator
-  cancel-in-progress: true  # Только для prepare/restart — не трогает scan-джобы
-
 permissions:
   contents: read
   actions: write
@@ -26,6 +22,9 @@ jobs:
   # ── Шаг 1: список юзеров ──────────────────────────────────────────────────
   prepare:
     runs-on: ubuntu-latest
+    concurrency:
+      group: sfl-matrix-coordinator
+      cancel-in-progress: true  # Новый prepare отменяет старый (быстрый джоб, OK)
     outputs:
       matrix: ${{ steps.get_users.outputs.matrix }}
       has_users: ${{ steps.get_users.outputs.has_users }}
@@ -118,6 +117,9 @@ jobs:
     # Не рестартуем если это был точечный retry отдельного юзера
     if: always() && inputs.single_user == ''
     runs-on: ubuntu-latest
+    concurrency:
+      group: sfl-matrix-restart
+      cancel-in-progress: true  # Дублирующий restart не нужен
     steps:
       - name: Trigger next full matrix run
         env:
