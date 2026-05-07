@@ -123,7 +123,7 @@ jobs:
   restart:
     needs: scan
     # Не рестартуем если это был точечный retry отдельного юзера
-    if: needs.scan.result != 'skipped' && inputs.single_user == ''
+    if: always() && inputs.single_user == ''
     runs-on: ubuntu-latest
     concurrency:
       group: sfl-matrix-restart
