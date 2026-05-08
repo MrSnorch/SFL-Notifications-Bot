@@ -123,7 +123,10 @@ jobs:
   restart:
     needs: scan
     # Не рестартуем если это был точечный retry отдельного юзера
-    if: always() && inputs.single_user == ''
+    # Рестарт только из workflow_dispatch (не из cron).
+    # Cron — чистая страховка: запустил и всё, без продолжения цепочки.
+    # Иначе cron + self-restart одновременно убивают друг друга через per-user concurrency.
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.single_user == ''
     runs-on: ubuntu-latest
     concurrency:
       group: sfl-matrix-restart
