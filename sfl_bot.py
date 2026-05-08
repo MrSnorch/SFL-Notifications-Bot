@@ -996,22 +996,27 @@ def handle_callback(callback_query):
         _, res_key, n_str = data.split(":", 2)
         n = max(0, min(5, int(n_str)))
         per_res = state.setdefault("repeat_per_resource", {})
-        per_res.setdefault(res_key, {})["count"] = n
         if res_key == "__global__":
             state.setdefault("repeat", {})["count"] = n
-            state.get("repeat_per_resource", {}).pop("__global__", None)
+        else:
+            # Если кастомной записи ещё нет — инициализируем с текущим эффективным интервалом,
+            # чтобы он не сбрасывался к 10м при первом нажатии
+            if res_key not in per_res:
+                global_repeat = state.get("repeat", {})
+                per_res[res_key] = {"interval_min": int(global_repeat.get("interval_min", 10))}
+            per_res[res_key]["count"] = n
         update_user(chat_id, state=state)
         toast = t("repeat_off_toast", lang) if n == 0 else t("repeat_count_toast", lang, n=n)
         answer_callback(cq_id, toast)
         # Обновляем клавиатуру
         if res_key == "__global__":
             rep = state.get("repeat", {})
-            r_count    = int(rep.get("count", n))
+            r_count    = n
             r_interval = int(rep.get("interval_min", 10))
             label = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
             has_custom = False
         else:
-            rr = (state.get("repeat_per_resource") or {}).get(res_key, {})
+            rr = per_res.get(res_key, {})
             r_count    = n
             r_interval = int(rr.get("interval_min", 10))
             has_custom = True
@@ -1027,10 +1032,15 @@ def handle_callback(callback_query):
         _, res_key, m_str = data.split(":", 2)
         m = int(m_str)
         per_res = state.setdefault("repeat_per_resource", {})
-        per_res.setdefault(res_key, {})["interval_min"] = m
         if res_key == "__global__":
             state.setdefault("repeat", {})["interval_min"] = m
-            state.get("repeat_per_resource", {}).pop("__global__", None)
+        else:
+            # Если кастомной записи ещё нет — инициализируем с текущим эффективным count,
+            # чтобы он не сбрасывался к 1 при первом нажатии
+            if res_key not in per_res:
+                global_repeat = state.get("repeat", {})
+                per_res[res_key] = {"count": int(global_repeat.get("count", 1))}
+            per_res[res_key]["interval_min"] = m
         update_user(chat_id, state=state)
         answer_callback(cq_id, t("repeat_interval_toast", lang, m=m))
         if res_key == "__global__":
@@ -1040,7 +1050,7 @@ def handle_callback(callback_query):
             label = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
             has_custom = False
         else:
-            rr = (state.get("repeat_per_resource") or {}).get(res_key, {})
+            rr = per_res.get(res_key, {})
             r_count    = int(rr.get("count", 1))
             r_interval = m
             has_custom = True
