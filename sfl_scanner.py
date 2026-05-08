@@ -29,7 +29,7 @@ log = logging.getLogger("SFL")
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
     tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
-    tg_unpin_message, Event,
+    tg_unpin_message, Event, split_ready_into_waves,
     discover_dynamic_resources, merge_discovered,
     get_tz,
 )
@@ -48,64 +48,73 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                          repeat_count: int = 3,
                          repeat_interval_sec: int = 600) -> dict:
     """
-    Для каждого готового события:
-    - Если нет алерта → отправляем новый.
-    - Если счётчик изменился → редактируем.
-    - Если событие не собрано и прошёл интервал → повтор (до repeat_count раз).
-    - Если событие больше не готово → удаляем алерт.
+    Для каждого готового события разбивает на волны и отправляет/редактирует алерт на волну.
+    Ключ алерта: "{name}:{wave_anchor_ms}" — стабилен между сканами.
     """
     current_ready = {}
     now = time.time()
+    now_ms = int(now * 1000)
 
     for e in events:
         if e.ready_count <= 0:
             continue
-        key  = e.name
-        text = format_ready_alert(e)
-        current_ready[key] = e
-        stored = alerts_state.get(key)
 
-        if stored is None:
-            # Новый алерт
-            mid = tg_send(TG_TOKEN, chat_id, text)
-            if mid:
-                alerts_state[key] = {
-                    "mid":          mid,
-                    "ready_count":  e.ready_count,
-                    "count":        e.count,
-                    "sent_count":   0,
-                    "last_sent_at": now,
-                }
+        # Разбиваем готовые ресурсы на волны (группы по 5 минут)
+        if e.ready_times and e.count > 1:
+            ready_now = [t for t in e.ready_times if t <= now_ms + 30_000]
+            waves = split_ready_into_waves(ready_now)
+            if not waves:
+                waves = [(e.ready_count, int(e.ready_at_ms))]
         else:
-            mid       = stored["mid"]
-            old_rc    = stored.get("ready_count", -1)
-            old_c     = stored.get("count", e.count)
-            sent      = stored.get("sent_count", 1)
-            last_sent = stored.get("last_sent_at", now)
+            waves = [(e.ready_count, int(e.ready_at_ms))]
 
-            if old_rc != e.ready_count or old_c != e.count:
-                # Счётчик изменился — редактируем
-                tg_edit(TG_TOKEN, chat_id, mid, text)
-                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
-            elif sent < repeat_count and (now - last_sent) >= repeat_interval_sec:
-                # Повтор: новое сообщение (пингует), старое удаляем
-                new_mid = tg_send(TG_TOKEN, chat_id, text)
-                if new_mid:
-                    tg_delete(TG_TOKEN, chat_id, mid)
+        for wave_count, wave_anchor in waves:
+            key  = f"{e.name}:{wave_anchor}"
+            text = format_ready_alert(e, wave_count=wave_count)
+            current_ready[key] = e
+            stored = alerts_state.get(key)
+
+            if stored is None:
+                # Новый алерт
+                mid = tg_send(TG_TOKEN, chat_id, text)
+                if mid:
                     alerts_state[key] = {
-                        "mid":          new_mid,
-                        "ready_count":  e.ready_count,
+                        "mid":          mid,
+                        "ready_count":  wave_count,
                         "count":        e.count,
-                        "sent_count":   sent + 1,
+                        "sent_count":   0,
                         "last_sent_at": now,
                     }
-                    log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
-            elif sent >= repeat_count:
-                log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{repeat_count})")
             else:
-                remaining = int(repeat_interval_sec - (now - last_sent))
-                log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
-                          f"(отправлено {sent}/{repeat_count})")
+                mid       = stored["mid"]
+                old_rc    = stored.get("ready_count", -1)
+                old_c     = stored.get("count", e.count)
+                sent      = stored.get("sent_count", 1)
+                last_sent = stored.get("last_sent_at", now)
+
+                if old_rc != wave_count or old_c != e.count:
+                    # Счётчик изменился — редактируем
+                    tg_edit(TG_TOKEN, chat_id, mid, text)
+                    alerts_state[key] = {**stored, "ready_count": wave_count, "count": e.count}
+                elif sent < repeat_count and (now - last_sent) >= repeat_interval_sec:
+                    # Повтор: новое сообщение (пингует), старое удаляем
+                    new_mid = tg_send(TG_TOKEN, chat_id, text)
+                    if new_mid:
+                        tg_delete(TG_TOKEN, chat_id, mid)
+                        alerts_state[key] = {
+                            "mid":          new_mid,
+                            "ready_count":  wave_count,
+                            "count":        e.count,
+                            "sent_count":   sent + 1,
+                            "last_sent_at": now,
+                        }
+                        log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
+                elif sent >= repeat_count:
+                    log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{repeat_count})")
+                else:
+                    remaining = int(repeat_interval_sec - (now - last_sent))
+                    log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
+                              f"(отправлено {sent}/{repeat_count})")
 
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
@@ -241,25 +250,37 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
     """
     Отправляет алерт о готовности события не делая запрос к игровому API.
     Вызывается когда мы проснулись раньше планового скана именно ради этого события.
-    ready_count выставляем в count — таймер истёк, событие готово.
+    Использует волновой ключ "{name}:{wave_anchor_ms}" совместимый с process_ready_alerts.
     """
     state        = load_state(telegram_id)
     alerts_state = state.get("ready_alerts", {})
 
-    # Вычисляем точное количество готовых на момент пробуждения.
-    # Нельзя просто ставить event.count — таймер срабатывает по ready_at_ms = st[0]
-    # (первый ресурс), а остальные могут дозревать позже (например, через 2 часа).
+    # Вычисляем количество готовых на момент пробуждения.
+    # max(1, ...) — мы проснулись именно ради этого события, минимум 1 гарантированно готов
+    # (ранний подъём на 3с может дать sum=0 до наступления таймера).
     now_ms = int(time.time() * 1000)
     if event.ready_times:
-        event.ready_count = sum(1 for t in event.ready_times if t <= now_ms)
+        event.ready_count = max(1, sum(1 for t in event.ready_times if t <= now_ms))
     else:
         event.ready_count = event.count  # fallback для ресурсов без ready_times
-    text = format_ready_alert(event)
+
+    # Определяем волну: первый готовый/почти готовый ресурс задаёт anchor
+    if event.ready_times and event.count > 1:
+        ready_now = [t for t in event.ready_times if t <= now_ms + 30_000]
+        waves = split_ready_into_waves(ready_now)
+        wave_count, wave_anchor = waves[0] if waves else (event.ready_count, int(event.ready_at_ms))
+        wave_count = max(1, wave_count)
+    else:
+        wave_count  = event.ready_count
+        wave_anchor = int(event.ready_at_ms)
+
+    key  = f"{event.name}:{wave_anchor}"
+    text = format_ready_alert(event, wave_count=wave_count)
     mid  = tg_send(TG_TOKEN, telegram_id, text)
     if mid:
-        alerts_state[event.name] = {
+        alerts_state[key] = {
             "mid":          mid,
-            "ready_count":  event.ready_count,
+            "ready_count":  wave_count,
             "count":        event.count,
             "sent_count":   0,
             "last_sent_at": time.time(),

@@ -822,6 +822,28 @@ def _split_into_groups(ready_times: list, now_ms: int,
     return groups
 
 
+def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[tuple[int, int]]:
+    """
+    Разбивает уже готовые ready_times на волны по близости времени.
+    Возвращает список (count, anchor_ms) где anchor — первый таймстамп волны.
+    """
+    times = sorted(ready_times)
+    if not times:
+        return []
+    groups: list[tuple[int, int]] = []
+    anchor = times[0]
+    count = 1
+    for t in times[1:]:
+        if t - anchor <= window_ms:
+            count += 1
+        else:
+            groups.append((count, anchor))
+            anchor = t
+            count = 1
+    groups.append((count, anchor))
+    return groups
+
+
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru") -> str:
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
@@ -884,12 +906,15 @@ def format_status_message(events: list[Event], farm_id: str,
     return "\n".join(lines)
 
 
-def format_ready_alert(e: Event, lang: str = "ru") -> str:
-    # Если все оставшиеся ресурсы созреют в течение 30 секунд — показываем полный счётчик,
-    # чтобы не слать "готово [1/22]" когда через 5 секунд будет готово [22/22].
+def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None) -> str:
+    # wave_count передаётся явно при волновом режиме.
+    # Иначе: если все оставшиеся созреют в течение 30 секунд — показываем полный счётчик.
     now_ms = int(time.time() * 1000)
-    all_ready_soon = (e.last_ready_at_ms - now_ms) <= 30_000
-    effective_ready = e.count if all_ready_soon else e.ready_count
+    if wave_count is not None:
+        effective_ready = wave_count
+    else:
+        all_ready_soon = (e.last_ready_at_ms - now_ms) <= 30_000
+        effective_ready = e.count if all_ready_soon else e.ready_count
     cnt = f" [{effective_ready}/{e.count}]" if e.count > 1 else ""
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
