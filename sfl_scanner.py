@@ -137,7 +137,7 @@ def scan_user(user: dict) -> "int | None":
         if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
             raise  # пробрасываем 429 — кулдаун выставляет run_loop
         log.warning(f"[{username}] Ошибка API: {e}")
-        return
+        return None, None
 
     # ── Автодетект новых ресурсов ─────────────────────────────────────────────
     state             = load_state(telegram_id)
