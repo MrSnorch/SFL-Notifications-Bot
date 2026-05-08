@@ -316,7 +316,8 @@ def scan_dynamic_resource(farm: dict, key: str, timer_field: str,
     pnd = times[rc] if rc < len(times) else times[-1]
     return Event(label, emoji, times[0], len(times), rc,
                  f"{rc}/{len(times)} готово" if rc else f"{len(times)} шт.",
-                 pending_at_ms=pnd, last_ready_at_ms=times[-1])
+                 pending_at_ms=pnd, last_ready_at_ms=times[-1],
+                 resource_key=key)
 
 
 DEFAULT_TRACKING = {
@@ -349,7 +350,8 @@ TRACK_LABELS = [
 
 class Event:
     def __init__(self, name, emoji, ready_at_ms, count=1, ready_count=0,
-                 extra="", pending_at_ms=None, last_ready_at_ms=None, ready_times=None):
+                 extra="", pending_at_ms=None, last_ready_at_ms=None, ready_times=None,
+                 resource_key=""):
         self.name         = name
         self.emoji        = emoji
         self.ready_at_ms  = ready_at_ms
@@ -360,7 +362,9 @@ class Event:
         self.last_ready_at_ms = last_ready_at_ms if last_ready_at_ms is not None else ready_at_ms
         # Полный отсортированный список таймов готовности — нужен для точного подсчёта
         # в _fire_pending_alert, когда уведомление шлётся без нового API-запроса.
-        self.ready_times = ready_times
+        self.ready_times  = ready_times
+        # Ключ категории ресурса (crops / trees / stones / …) для per-resource настроек повтора
+        self.resource_key = resource_key
 
     def is_ready(self):
         return self.ready_at_ms <= int(time.time() * 1000)
@@ -469,7 +473,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = times[rc] if rc < len(times) else times[-1]
             events.append(Event(name, "🌾", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} участков",
-                pending_at_ms=pnd, last_ready_at_ms=times[-1], ready_times=times))
+                pending_at_ms=pnd, last_ready_at_ms=times[-1], ready_times=times,
+                resource_key="crops"))
 
     # ── TREES ─────────────────────────────────────────────────────────────────
     if track.get("trees", True):
@@ -485,7 +490,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = tt[rc] if rc < len(tt) else tt[-1]
             events.append(Event("Trees", "🪵", tt[0], len(tt), rc,
                 f"{rc}/{len(tt)} готово" if rc else f"{len(tt)} деревьев",
-                pending_at_ms=pnd, last_ready_at_ms=tt[-1], ready_times=tt))
+                pending_at_ms=pnd, last_ready_at_ms=tt[-1], ready_times=tt,
+                resource_key="trees"))
 
     # ── STONES / IRON / GOLD / CRIMSTONES ─────────────────────────────────────
     for key, label, emoji, respawn in [
@@ -507,7 +513,8 @@ def scan_farm(farm: dict, track: dict,
                 pnd = st[rc] if rc < len(st) else st[-1]
                 events.append(Event(label, emoji, st[0], len(st), rc,
                     f"{rc}/{len(st)} готово" if rc else f"{len(st)} шт.",
-                    pending_at_ms=pnd, last_ready_at_ms=st[-1], ready_times=st))
+                    pending_at_ms=pnd, last_ready_at_ms=st[-1], ready_times=st,
+                    resource_key=key))
 
     # ── OIL ───────────────────────────────────────────────────────────────────
     if track.get("oil", False):
@@ -523,7 +530,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = ot[rc] if rc < len(ot) else ot[-1]
             events.append(Event("Oil", "🛢️", ot[0], len(ot), rc,
                 f"{rc}/{len(ot)} готово" if rc else f"{len(ot)} скважин",
-                pending_at_ms=pnd, last_ready_at_ms=ot[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=ot[-1],
+                resource_key="oil"))
 
     # ── SALT ──────────────────────────────────────────────────────────────────
     if track.get("salt", True):
@@ -543,7 +551,8 @@ def scan_farm(farm: dict, track: dict,
             rc = sa_stored + sum(1 for t in sa_ready if t <= now_ms)
             earliest = min(sa_ready) if sa_ready else now_ms
             events.append(Event("Salt", "🧂", earliest, total, rc,
-                f"{rc}/{total} готово" if rc else f"{total} узл."))
+                f"{rc}/{total} готово" if rc else f"{total} узл.",
+                resource_key="salt"))
 
     # ── SUNSTONES ─────────────────────────────────────────────────────────────
     if track.get("sunstones", False):
@@ -559,7 +568,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = ss[rc] if rc < len(ss) else ss[-1]
             events.append(Event("Sunstones", "🌟", ss[0], len(ss), rc,
                 f"{rc}/{len(ss)} готово" if rc else f"{len(ss)} жил",
-                pending_at_ms=pnd, last_ready_at_ms=ss[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=ss[-1],
+                resource_key="sunstones"))
 
     # ── FRUITS ────────────────────────────────────────────────────────────────
     if track.get("fruits", True):
@@ -584,7 +594,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = times[rc] if rc < len(times) else times[-1]
             events.append(Event(name, "🍎", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} деревьев",
-                pending_at_ms=pnd, last_ready_at_ms=times[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=times[-1],
+                resource_key="fruits"))
 
     # ── FLOWERS ───────────────────────────────────────────────────────────────
     if track.get("flowers", True):
@@ -612,7 +623,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = times[rc] if rc < len(times) else times[-1]
             events.append(Event(name, "🌸", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} грядок",
-                pending_at_ms=pnd, last_ready_at_ms=times[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=times[-1],
+                resource_key="flowers"))
 
     # ── HONEY ─────────────────────────────────────────────────────────────────
     # Скорость производства мёда:
@@ -670,7 +682,8 @@ def scan_farm(farm: dict, track: dict,
             pnd = ht[rc] if rc < len(ht) else ht[-1]
             extra = f"🐝 Bee Swarm x{swarm_total}" if swarm_total else ""
             events.append(Event("Honey", "🍯", ht[0], len(ht), rc,
-                extra, pending_at_ms=pnd, last_ready_at_ms=ht[-1]))
+                extra, pending_at_ms=pnd, last_ready_at_ms=ht[-1],
+                resource_key="honey"))
 
     # ── MUSHROOMS ─────────────────────────────────────────────────────────────
     if track.get("mushrooms", False):
@@ -678,7 +691,7 @@ def scan_farm(farm: dict, track: dict,
         sa = _fix_ts(mush.get("spawnedAt", 0))
         if sa:
             events.append(Event("Mushrooms", "🍄", sa + MUSH_SPAWN_MS, 1,
-                extra="новая партия"))
+                extra="новая партия", resource_key="mushrooms"))
 
     # ── ANIMALS ───────────────────────────────────────────────────────────────
     if track.get("animals", False):
@@ -702,7 +715,7 @@ def scan_farm(farm: dict, track: dict,
             last_at = max((t for t in times if t > 0), default=now_ms)
             events.append(Event(atype, emoji, first, len(times), rc,
                 f"{rc}/{len(times)} проснулось" if rc else f"{len(times)} животных",
-                last_ready_at_ms=last_at))
+                last_ready_at_ms=last_at, resource_key="animals"))
 
     # ── ДИНАМИЧЕСКИЕ РЕСУРСЫ (автодетект) ────────────────────────────────────
     for dr in (dynamic_resources or []):

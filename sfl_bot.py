@@ -342,6 +342,41 @@ STRINGS = {
         "en": "✅ {tz}",
         "uk": "✅ {tz}",
     },
+    "repeat_list_title": {
+        "ru": "🔁 <b>Повторы уведомлений по ресурсам</b>\n\nНастрой повторы отдельно для каждого ресурса.\nРесурсы без настройки используют <b>глобальный</b> повтор.",
+        "en": "🔁 <b>Repeat notifications per resource</b>\n\nConfigure repeats for each resource individually.\nResources without a setting use the <b>global</b> repeat.",
+        "uk": "🔁 <b>Повтори сповіщень по ресурсах</b>\n\nНалаштуй повтори окремо для кожного ресурсу.\nРесурси без налаштування використовують <b>глобальний</b> повтор.",
+    },
+    "repeat_global_btn": {
+        "ru": "⚙️ По умолчанию: {summary}",
+        "en": "⚙️ Default: {summary}",
+        "uk": "⚙️ За замовч.: {summary}",
+    },
+    "repeat_res_btn": {
+        "ru": "{label} — {summary}",
+        "en": "{label} — {summary}",
+        "uk": "{label} — {summary}",
+    },
+    "repeat_res_title": {
+        "ru": "🔁 <b>Повторы: {label}</b>\n\nНастройки повтора именно для этого ресурса.\nЕсли выкл — используется глобальный повтор.",
+        "en": "🔁 <b>Repeats: {label}</b>\n\nRepeat settings for this resource specifically.\nIf off — the global repeat is used.",
+        "uk": "🔁 <b>Повтори: {label}</b>\n\nНалаштування повтору саме для цього ресурсу.\nЯкщо вимк — використовується глобальний повтор.",
+    },
+    "repeat_res_reset_btn": {
+        "ru": "↩️ Сбросить (использовать глобальный)",
+        "en": "↩️ Reset (use global setting)",
+        "uk": "↩️ Скинути (використати глобальний)",
+    },
+    "repeat_res_reset_toast": {
+        "ru": "↩️ Сброшено — используется глобальный повтор",
+        "en": "↩️ Reset — using global repeat",
+        "uk": "↩️ Скинуто — використовується глобальний повтор",
+    },
+    "repeat_inherited": {
+        "ru": "глоб.",
+        "en": "global",
+        "uk": "глоб.",
+    },
     "unknown_command": {
         "ru": "❓ Неизвестная команда.\n",
         "en": "❓ Unknown command.\n",
@@ -515,6 +550,105 @@ def repeat_keyboard(lang, repeat_count=1, repeat_interval_min=10):
 
 
 
+def get_resource_repeat(state: dict, resource_key: str) -> dict | None:
+    """
+    Возвращает per-resource настройки повтора или None если используется глобальный.
+    """
+    return (state.get("repeat_per_resource") or {}).get(resource_key)
+
+
+def _repeat_summary(lang: str, count: int, interval_min: int, inherited: bool = False) -> str:
+    """Короткая строка вида '2×/15м' или '🔕 выкл' для кнопки."""
+    if inherited:
+        return t("repeat_inherited", lang)
+    if count == 0:
+        return t("repeat_summary_off", lang)
+    suffix = "хв" if lang == "uk" else ("m" if lang == "en" else "м")
+    return f"{count}×/{interval_min}{suffix}"
+
+
+def repeat_resource_list_keyboard(tracking: dict, dynamic_resources: list,
+                                   state: dict, lang: str) -> dict:
+    """
+    Список ресурсов с их индивидуальными настройками повтора.
+    Первая строка — глобальный повтор (по умолчанию).
+    Остальные — только отслеживаемые ресурсы.
+    """
+    buttons = []
+    global_repeat  = state.get("repeat", {})
+    g_count        = int(global_repeat.get("count", 1))
+    g_interval     = int(global_repeat.get("interval_min", 10))
+    g_summary      = _repeat_summary(lang, g_count, g_interval)
+    buttons.append([{
+        "text": t("repeat_global_btn", lang, summary=g_summary),
+        "callback_data": "repeat_res:__global__",
+    }])
+
+    per_res = state.get("repeat_per_resource") or {}
+
+    all_resources = list(TRACK_LABELS) + [
+        (dr["key"], f"{dr['emoji']} {dr['label']}") for dr in (dynamic_resources or [])
+    ]
+    for key, label in all_resources:
+        if not tracking.get(key, False):
+            continue
+        custom = per_res.get(key)
+        if custom is not None:
+            summary = _repeat_summary(lang, int(custom.get("count", 1)),
+                                      int(custom.get("interval_min", 10)))
+        else:
+            summary = _repeat_summary(lang, g_count, g_interval, inherited=True)
+        buttons.append([{
+            "text": t("repeat_res_btn", lang, label=label, summary=summary),
+            "callback_data": f"repeat_res:{key}",
+        }])
+
+    buttons.append([{
+        "text": t("settings_btn_back", lang),
+        "callback_data": "settings:open",
+    }])
+    return {"inline_keyboard": buttons}
+
+
+def repeat_resource_keyboard(lang: str, resource_key: str,
+                              count: int = 1, interval_min: int = 10,
+                              has_custom: bool = False) -> dict:
+    """
+    Клавиатура настройки повтора для конкретного ресурса.
+    has_custom=True — показывает кнопку сброса к глобальному.
+    """
+    if count == 0:
+        off_row = [{"text": t("repeat_on_btn", lang),
+                    "callback_data": f"repeat_res_count:{resource_key}:2"}]
+    else:
+        off_row = [{"text": t("repeat_off_btn", lang),
+                    "callback_data": f"repeat_res_count:{resource_key}:0"}]
+    count_row = [
+        {"text": f"{'✅ ' if n == count else ''}{n}×",
+         "callback_data": f"repeat_res_count:{resource_key}:{n}"}
+        for n in range(1, 6)
+    ]
+    interval_row = [
+        {"text": f"{'✅ ' if m == interval_min else ''}{m}{'м' if lang != 'en' else 'm'}",
+         "callback_data": f"repeat_res_interval:{resource_key}:{m}"}
+        for m in (5, 10, 15, 30)
+    ]
+    rows = [off_row]
+    if count > 0:
+        rows.append(count_row)
+        rows.append(interval_row)
+    if has_custom and resource_key != "__global__":
+        rows.append([{
+            "text": t("repeat_res_reset_btn", lang),
+            "callback_data": f"repeat_res_reset:{resource_key}",
+        }])
+    rows.append([{
+        "text": t("settings_btn_back", lang),
+        "callback_data": "repeat_list",
+    }])
+    return {"inline_keyboard": rows}
+
+
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       repeat_count=3, repeat_interval_min=10):
     """Inline-клавиатура для /settings."""
@@ -540,7 +674,7 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     )
     buttons.append([{
         "text": repeat_label,
-        "callback_data": "repeat_menu",
+        "callback_data": "repeat_list",
     }])
     buttons.append([{
         "text": t("settings_btn_save", lang),
@@ -786,42 +920,158 @@ def handle_callback(callback_query):
         )
 
     elif data.startswith("repeat_count:"):
+        # Глобальный повтор (старый формат — обратная совместимость)
         n = max(0, min(5, int(data.split(":", 1)[1])))
         state.setdefault("repeat", {})["count"] = n
         update_user(chat_id, state=state)
-        if n == 0:
-            toast = t("repeat_off_toast", lang)
-        elif data == "repeat_count:2" and int(state.get("repeat", {}).get("count", 1)) == 0:
-            toast = t("repeat_on_toast", lang)
-        else:
-            toast = t("repeat_count_toast", lang, n=n)
+        toast = t("repeat_off_toast", lang) if n == 0 else t("repeat_count_toast", lang, n=n)
         answer_callback(cq_id, toast)
         repeat = state.get("repeat", {})
+        glbl = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
         edit_text(
             chat_id, msg_id,
-            t("repeat_menu_title", lang),
-            reply_markup=repeat_keyboard(lang, n, int(repeat.get("interval_min", 10))),
+            t("repeat_res_title", lang, label=glbl),
+            reply_markup=repeat_resource_keyboard(
+                lang, "__global__", n, int(repeat.get("interval_min", 10)), False),
         )
 
     elif data.startswith("repeat_interval:"):
+        # Глобальный интервал (старый формат — обратная совместимость)
         m = int(data.split(":", 1)[1])
         state.setdefault("repeat", {})["interval_min"] = m
         update_user(chat_id, state=state)
         answer_callback(cq_id, t("repeat_interval_toast", lang, m=m))
         repeat = state.get("repeat", {})
+        glbl = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
         edit_text(
             chat_id, msg_id,
-            t("repeat_menu_title", lang),
-            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), m),
+            t("repeat_res_title", lang, label=glbl),
+            reply_markup=repeat_resource_keyboard(
+                lang, "__global__", int(repeat.get("count", 1)), m, False),
+        )
+
+    elif data == "repeat_list":
+        # Список ресурсов с per-resource настройками повтора
+        answer_callback(cq_id)
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_list_title", lang),
+            reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
+        )
+
+    elif data.startswith("repeat_res:"):
+        # Открыть повторы для конкретного ресурса (или глобальные)
+        res_key = data.split(":", 1)[1]
+        answer_callback(cq_id)
+        per_res = state.get("repeat_per_resource") or {}
+        if res_key == "__global__":
+            rep = state.get("repeat", {})
+            r_count    = int(rep.get("count", 1))
+            r_interval = int(rep.get("interval_min", 10))
+            has_custom = False
+            label = {
+                "ru": "По умолчанию", "en": "Default", "uk": "За замовч."
+            }.get(lang, "Default")
+        elif res_key in per_res:
+            rr = per_res[res_key]
+            r_count    = int(rr.get("count", 1))
+            r_interval = int(rr.get("interval_min", 10))
+            has_custom = True
+            label = dict(TRACK_LABELS).get(res_key, res_key)
+        else:
+            # Нет кастомных настроек — показываем глобальные как начальные
+            rep = state.get("repeat", {})
+            r_count    = int(rep.get("count", 1))
+            r_interval = int(rep.get("interval_min", 10))
+            has_custom = False
+            label = dict(TRACK_LABELS).get(res_key, res_key)
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_res_title", lang, label=label),
+            reply_markup=repeat_resource_keyboard(lang, res_key, r_count, r_interval, has_custom),
+        )
+
+    elif data.startswith("repeat_res_count:"):
+        # Установить count для конкретного ресурса
+        _, res_key, n_str = data.split(":", 2)
+        n = max(0, min(5, int(n_str)))
+        per_res = state.setdefault("repeat_per_resource", {})
+        per_res.setdefault(res_key, {})["count"] = n
+        if res_key == "__global__":
+            state.setdefault("repeat", {})["count"] = n
+            state.get("repeat_per_resource", {}).pop("__global__", None)
+        update_user(chat_id, state=state)
+        toast = t("repeat_off_toast", lang) if n == 0 else t("repeat_count_toast", lang, n=n)
+        answer_callback(cq_id, toast)
+        # Обновляем клавиатуру
+        if res_key == "__global__":
+            rep = state.get("repeat", {})
+            r_count    = int(rep.get("count", n))
+            r_interval = int(rep.get("interval_min", 10))
+            label = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
+            has_custom = False
+        else:
+            rr = (state.get("repeat_per_resource") or {}).get(res_key, {})
+            r_count    = n
+            r_interval = int(rr.get("interval_min", 10))
+            has_custom = True
+            label = dict(TRACK_LABELS).get(res_key, res_key)
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_res_title", lang, label=label),
+            reply_markup=repeat_resource_keyboard(lang, res_key, r_count, r_interval, has_custom),
+        )
+
+    elif data.startswith("repeat_res_interval:"):
+        # Установить interval для конкретного ресурса
+        _, res_key, m_str = data.split(":", 2)
+        m = int(m_str)
+        per_res = state.setdefault("repeat_per_resource", {})
+        per_res.setdefault(res_key, {})["interval_min"] = m
+        if res_key == "__global__":
+            state.setdefault("repeat", {})["interval_min"] = m
+            state.get("repeat_per_resource", {}).pop("__global__", None)
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("repeat_interval_toast", lang, m=m))
+        if res_key == "__global__":
+            rep = state.get("repeat", {})
+            r_count    = int(rep.get("count", 1))
+            r_interval = m
+            label = {"ru": "По умолчанию", "en": "Default", "uk": "За замовч."}.get(lang, "Default")
+            has_custom = False
+        else:
+            rr = (state.get("repeat_per_resource") or {}).get(res_key, {})
+            r_count    = int(rr.get("count", 1))
+            r_interval = m
+            has_custom = True
+            label = dict(TRACK_LABELS).get(res_key, res_key)
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_res_title", lang, label=label),
+            reply_markup=repeat_resource_keyboard(lang, res_key, r_count, r_interval, has_custom),
+        )
+
+    elif data.startswith("repeat_res_reset:"):
+        # Сбросить per-resource настройки — ресурс вернётся к глобальному повтору
+        res_key = data.split(":", 1)[1]
+        per_res = state.get("repeat_per_resource") or {}
+        per_res.pop(res_key, None)
+        state["repeat_per_resource"] = per_res
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("repeat_res_reset_toast", lang))
+        edit_text(
+            chat_id, msg_id,
+            t("repeat_list_title", lang),
+            reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
         )
 
     elif data == "repeat_menu":
+        # Обратная совместимость — редиректим на repeat_list
         answer_callback(cq_id)
-        repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
-            t("repeat_menu_title", lang),
-            reply_markup=repeat_keyboard(lang, int(repeat.get("count", 1)), int(repeat.get("interval_min", 10))),
+            t("repeat_list_title", lang),
+            reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
         )
 
     elif data == "noop":

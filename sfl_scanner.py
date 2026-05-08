@@ -46,10 +46,13 @@ TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 def process_ready_alerts(chat_id: int, events: list[Event],
                          alerts_state: dict,
                          repeat_count: int = 3,
-                         repeat_interval_sec: int = 600) -> dict:
+                         repeat_interval_sec: int = 600,
+                         repeat_by_key: dict | None = None) -> dict:
     """
     Для каждого готового события разбивает на волны и отправляет/редактирует алерт на волну.
     Ключ алерта: "{name}:{wave_anchor_ms}" — стабилен между сканами.
+    repeat_by_key: {resource_key: {"count": n, "interval_min": m}} — per-resource настройки.
+    Если ресурс отсутствует в repeat_by_key — используются глобальные repeat_count/repeat_interval_sec.
     """
     current_ready = {}
     now = time.time()
@@ -58,6 +61,16 @@ def process_ready_alerts(chat_id: int, events: list[Event],
     for e in events:
         if e.ready_count <= 0:
             continue
+
+        # Определяем эффективные настройки повтора для этого ресурса
+        r_key = getattr(e, "resource_key", "")
+        if repeat_by_key and r_key and r_key in repeat_by_key:
+            rr = repeat_by_key[r_key]
+            eff_count    = max(0, min(5, int(rr.get("count", repeat_count))))
+            eff_interval = int(rr.get("interval_min", repeat_interval_sec // 60)) * 60
+        else:
+            eff_count    = repeat_count
+            eff_interval = repeat_interval_sec
 
         # Разбиваем готовые ресурсы на волны (группы по 5 минут)
         if e.ready_times and e.count > 1:
@@ -96,7 +109,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     # Счётчик изменился — редактируем
                     tg_edit(TG_TOKEN, chat_id, mid, text)
                     alerts_state[key] = {**stored, "ready_count": wave_count, "count": e.count}
-                elif sent < repeat_count and (now - last_sent) >= repeat_interval_sec:
+                elif sent < eff_count and (now - last_sent) >= eff_interval:
                     # Повтор: новое сообщение (пингует), старое удаляем
                     new_mid = tg_send(TG_TOKEN, chat_id, text)
                     if new_mid:
@@ -108,13 +121,13 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                             "sent_count":   sent + 1,
                             "last_sent_at": now,
                         }
-                        log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{repeat_count})")
-                elif sent >= repeat_count:
-                    log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{repeat_count})")
+                        log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{eff_count})")
+                elif sent >= eff_count:
+                    log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{eff_count})")
                 else:
-                    remaining = int(repeat_interval_sec - (now - last_sent))
+                    remaining = int(eff_interval - (now - last_sent))
                     log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
-                              f"(отправлено {sent}/{repeat_count})")
+                              f"(отправлено {sent}/{eff_count})")
 
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
@@ -192,10 +205,13 @@ def scan_user(user: dict) -> "int | None":
     repeat          = state.get("repeat", {})
     repeat_count    = max(0, min(5, int(repeat.get("count", 2))))
     repeat_interval = int(repeat.get("interval_min", 10)) * 60
+    # Per-resource repeat overrides: {resource_key: {"count": n, "interval_min": m}}
+    repeat_by_key   = state.get("repeat_per_resource", {}) or {}
     state["ready_alerts"] = process_ready_alerts(
         telegram_id, events, alerts_state,
         repeat_count=repeat_count,
         repeat_interval_sec=repeat_interval,
+        repeat_by_key=repeat_by_key,
     )
 
     save_state(telegram_id, state)
