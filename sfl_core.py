@@ -349,7 +349,7 @@ TRACK_LABELS = [
 
 class Event:
     def __init__(self, name, emoji, ready_at_ms, count=1, ready_count=0,
-                 extra="", pending_at_ms=None, last_ready_at_ms=None):
+                 extra="", pending_at_ms=None, last_ready_at_ms=None, ready_times=None):
         self.name         = name
         self.emoji        = emoji
         self.ready_at_ms  = ready_at_ms
@@ -358,6 +358,9 @@ class Event:
         self.extra        = extra
         self.pending_at_ms = pending_at_ms if pending_at_ms is not None else ready_at_ms
         self.last_ready_at_ms = last_ready_at_ms if last_ready_at_ms is not None else ready_at_ms
+        # Полный отсортированный список таймов готовности — нужен для точного подсчёта
+        # в _fire_pending_alert, когда уведомление шлётся без нового API-запроса.
+        self.ready_times = ready_times
 
     def is_ready(self):
         return self.ready_at_ms <= int(time.time() * 1000)
@@ -466,7 +469,7 @@ def scan_farm(farm: dict, track: dict,
             pnd = times[rc] if rc < len(times) else times[-1]
             events.append(Event(name, "🌾", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} участков",
-                pending_at_ms=pnd, last_ready_at_ms=times[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=times[-1], ready_times=times))
 
     # ── TREES ─────────────────────────────────────────────────────────────────
     if track.get("trees", True):
@@ -482,7 +485,7 @@ def scan_farm(farm: dict, track: dict,
             pnd = tt[rc] if rc < len(tt) else tt[-1]
             events.append(Event("Trees", "🪵", tt[0], len(tt), rc,
                 f"{rc}/{len(tt)} готово" if rc else f"{len(tt)} деревьев",
-                pending_at_ms=pnd, last_ready_at_ms=tt[-1]))
+                pending_at_ms=pnd, last_ready_at_ms=tt[-1], ready_times=tt))
 
     # ── STONES / IRON / GOLD / CRIMSTONES ─────────────────────────────────────
     for key, label, emoji, respawn in [
@@ -504,7 +507,7 @@ def scan_farm(farm: dict, track: dict,
                 pnd = st[rc] if rc < len(st) else st[-1]
                 events.append(Event(label, emoji, st[0], len(st), rc,
                     f"{rc}/{len(st)} готово" if rc else f"{len(st)} шт.",
-                    pending_at_ms=pnd, last_ready_at_ms=st[-1]))
+                    pending_at_ms=pnd, last_ready_at_ms=st[-1], ready_times=st))
 
     # ── OIL ───────────────────────────────────────────────────────────────────
     if track.get("oil", False):
@@ -795,6 +798,30 @@ def _fmt_ms_human(ms: int, lang: str = "ru") -> str:
     return _i18n("in_s", lang, s=sc)
 
 
+def _split_into_groups(ready_times: list, now_ms: int,
+                       window_ms: int = 300_000) -> list[tuple[int, int]]:
+    """
+    Разбивает pending ready_times на "волны" по близости времени.
+    Возвращает список (count, ready_at_ms) отсортированный по времени.
+    Таймы в пределах window_ms от первого в группе → одна волна.
+    """
+    pending = sorted(t for t in ready_times if t > now_ms)
+    if not pending:
+        return []
+    groups: list[tuple[int, int]] = []
+    group_anchor = pending[0]
+    group_count  = 1
+    for t in pending[1:]:
+        if t - group_anchor <= window_ms:
+            group_count += 1
+        else:
+            groups.append((group_count, group_anchor))
+            group_anchor = t
+            group_count  = 1
+    groups.append((group_count, group_anchor))
+    return groups
+
+
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru") -> str:
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
@@ -809,18 +836,41 @@ def format_status_message(events: list[Event], farm_id: str,
         lines.append(_i18n("all_ready", lang))
     else:
         lines.append("")
-        for e in sorted(pending, key=lambda x: x.pending_at_ms)[:20]:
-            cnt_label = f" [{e.count - e.ready_count}]" if e.count > 1 else ""
-            ms_left = max(0, e.pending_at_ms - int(time.time() * 1000))
+        now_ms = int(time.time() * 1000)
+
+        # Собираем отображаемые строки: каждая волна — отдельный элемент (ms, line)
+        display_items: list[tuple[int, str]] = []
+
+        for e in pending:
             swarm_extra = ""
             if e.name == "Honey" and e.extra:
                 import re as _re
                 m = _re.search(r"Swarm x(\d+)", e.extra)
                 swarm_extra = f" (Swarm x{m.group(1)})" if m else ""
-            lines.append(
+
+            # Если есть ready_times — делим на волны по времени готовности
+            if e.ready_times and e.count > 1:
+                groups = _split_into_groups(e.ready_times, now_ms)
+                if len(groups) > 1:
+                    for cnt, ready_ms in groups:
+                        ms_left = max(0, ready_ms - now_ms)
+                        clock   = datetime.fromtimestamp(ready_ms / 1000, tz=_tz).strftime("%H:%M")
+                        cnt_label = f" [{cnt}]"
+                        display_items.append((ready_ms,
+                            f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
+                            f" — {_fmt_ms_human(ms_left, lang)} — {clock}"))
+                    continue
+
+            # Одна волна или нет ready_times — стандартная строка
+            cnt_label = f" [{e.count - e.ready_count}]" if e.count > 1 else ""
+            ms_left   = max(0, e.pending_at_ms - now_ms)
+            clock     = e.fmt_pending_ready_time(_tz)
+            display_items.append((e.pending_at_ms,
                 f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
-                f" — {_fmt_ms_human(ms_left, lang)} — {e.fmt_pending_ready_time(_tz)}"
-            )
+                f" — {_fmt_ms_human(ms_left, lang)} — {clock}"))
+
+        for _, line in sorted(display_items, key=lambda x: x[0])[:20]:
+            lines.append(line)
 
     ready_now = [e for e in events if e.ready_count > 0]
     if ready_now:
