@@ -246,7 +246,14 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
     state        = load_state(telegram_id)
     alerts_state = state.get("ready_alerts", {})
 
-    event.ready_count = event.count  # таймер истёк → считаем всё готовым
+    # Вычисляем точное количество готовых на момент пробуждения.
+    # Нельзя просто ставить event.count — таймер срабатывает по ready_at_ms = st[0]
+    # (первый ресурс), а остальные могут дозревать позже (например, через 2 часа).
+    now_ms = int(time.time() * 1000)
+    if event.ready_times:
+        event.ready_count = sum(1 for t in event.ready_times if t <= now_ms)
+    else:
+        event.ready_count = event.count  # fallback для ресурсов без ready_times
     text = format_ready_alert(event)
     mid  = tg_send(TG_TOKEN, telegram_id, text)
     if mid:
