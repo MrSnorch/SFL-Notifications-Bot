@@ -44,6 +44,12 @@ SHARED_API_KEY = os.environ.get("SFL_API_KEY", "").strip()
 # ОБРАБОТКА АЛЕРТОВ ГОТОВНОСТИ
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _dismiss_keyboard(alert_key: str) -> dict:
+    """Инлайн-клавиатура с кнопкой ❌ для закрытия алерта."""
+    return {"inline_keyboard": [[
+        {"text": "❌", "callback_data": f"dismiss:{alert_key}"}
+    ]]}
+
 def process_ready_alerts(chat_id: int, events: list[Event],
                          alerts_state: dict,
                          repeat_count: int = 3,
@@ -90,7 +96,8 @@ def process_ready_alerts(chat_id: int, events: list[Event],
 
             if stored is None:
                 # Новый алерт
-                mid = tg_send(TG_TOKEN, chat_id, text)
+                mid = tg_send(TG_TOKEN, chat_id, text,
+                              reply_markup=_dismiss_keyboard(key))
                 if mid:
                     alerts_state[key] = {
                         "mid":          mid,
@@ -112,7 +119,8 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     alerts_state[key] = {**stored, "ready_count": wave_count, "count": e.count}
                 elif sent < eff_count and (now - last_sent) >= eff_interval:
                     # Повтор: новое сообщение (пингует), старое удаляем
-                    new_mid = tg_send(TG_TOKEN, chat_id, text)
+                    new_mid = tg_send(TG_TOKEN, chat_id, text,
+                                      reply_markup=_dismiss_keyboard(key))
                     if new_mid:
                         tg_delete(TG_TOKEN, chat_id, mid)
                         alerts_state[key] = {
@@ -296,7 +304,8 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
 
     key  = f"{event.name}:{wave_anchor}"
     text = format_ready_alert(event, wave_count=wave_count)
-    mid  = tg_send(TG_TOKEN, telegram_id, text)
+    mid  = tg_send(TG_TOKEN, telegram_id, text,
+                   reply_markup=_dismiss_keyboard(key))
     if mid:
         alerts_state[key] = {
             "mid":          mid,
