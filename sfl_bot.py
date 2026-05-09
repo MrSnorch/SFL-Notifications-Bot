@@ -39,6 +39,7 @@ from sfl_core import (
     DEFAULT_TRACKING, TRACK_LABELS,
     discover_dynamic_resources, merge_discovered,
     TIMEZONES, get_tz, tz_display_name,
+    panel_keyboard,
 )
 from sfl_supabase import (
     get_or_create_user, get_user, update_user,
@@ -107,7 +108,6 @@ STRINGS = {
             "/stop — приостановить уведомления\n"
             "/resume — возобновить уведомления\n"
             "/lang — сменить язык\n"
-            "/clean — очистить чат\n"
             "/help — это сообщение"
         ),
         "en": (
@@ -120,7 +120,6 @@ STRINGS = {
             "/stop — pause notifications\n"
             "/resume — resume notifications\n"
             "/lang — change language\n"
-            "/clean — clean up the chat\n"
             "/help — this message"
         ),
         "uk": (
@@ -133,7 +132,6 @@ STRINGS = {
             "/stop — призупинити сповіщення\n"
             "/resume — поновити сповіщення\n"
             "/lang — змінити мову\n"
-            "/clean — очистити чат\n"
             "/help — це повідомлення"
         ),
     },
@@ -387,16 +385,6 @@ STRINGS = {
         "en": "Please /start first",
         "uk": "Спочатку /start",
     },
-    "clean_done": {
-        "ru": "🧹 Удалено сообщений: <b>{count}</b>\n📌 Закреплённый статус и уведомления сохранены.",
-        "en": "🧹 Deleted messages: <b>{count}</b>\n📌 Pinned status and notifications kept.",
-        "uk": "🧹 Видалено повідомлень: <b>{count}</b>\n📌 Закріплений статус і сповіщення збережено.",
-    },
-    "clean_nothing": {
-        "ru": "✨ Чат уже чист.",
-        "en": "✨ Chat is already clean.",
-        "uk": "✨ Чат вже чистий.",
-    },
 }
 
 
@@ -479,7 +467,7 @@ def track_msg(chat_id, message_id):
 
 
 def send_service(chat_id, text, reply_markup=None, silent=False):
-    """Отправить сообщение и запомнить его ID для /clean."""
+    """Отправить сообщение и запомнить его ID (для возможной будущей очистки)."""
     result = send(chat_id, text, reply_markup=reply_markup, silent=silent)
     if result and result.get("message_id"):
         track_msg(chat_id, result["message_id"])
@@ -491,7 +479,7 @@ def send_service(chat_id, text, reply_markup=None, silent=False):
 # КЛАВИАТУРЫ
 # ══════════════════════════════════════════════════════════════════════════════
 
-def lang_keyboard(current_lang):
+def lang_keyboard(current_lang, back_to_panel=False):
     """Inline-клавиатура выбора языка."""
     buttons = []
     for code, (flag, name) in SUPPORTED_LANGS.items():
@@ -499,6 +487,12 @@ def lang_keyboard(current_lang):
         buttons.append([{
             "text": f"{marker}{flag} {name}",
             "callback_data": f"set_lang:{code}",
+        }])
+    if back_to_panel:
+        back_labels = {"ru": "◀️ Назад", "en": "◀️ Back", "uk": "◀️ Назад"}
+        buttons.append([{
+            "text": back_labels.get(current_lang, "◀️ Back"),
+            "callback_data": "panel:close",
         }])
     return {"inline_keyboard": buttons}
 
@@ -785,9 +779,11 @@ def handle_status(chat_id):
         events       = scan_farm(farm, tracking, dynamic_resources)
         user_tz      = get_tz(state.get("timezone"))
         status_text  = format_status_message(events, user["farm_id"], tz=user_tz)
+        is_active    = user.get("active", True)
+        kb           = panel_keyboard(lang, is_active)
         old_status_id = state.get("status_msg_id")
         if loading_msg_id:
-            edit_text(chat_id, loading_msg_id, status_text)
+            edit_text(chat_id, loading_msg_id, status_text, reply_markup=kb)
             new_status_id = loading_msg_id
         else:
             new_status_id = None
@@ -796,7 +792,8 @@ def handle_status(chat_id):
                 tg("unpinChatMessage", chat_id=chat_id, message_id=old_status_id)
             tg("pinChatMessage", chat_id=chat_id, message_id=new_status_id,
                disable_notification=True)
-        state["status_msg_id"] = new_status_id or old_status_id or 0
+        state["status_msg_id"]    = new_status_id or old_status_id or 0
+        state["last_status_text"] = status_text
         update_user(chat_id, state=state)
         return
     except Exception as e:
@@ -871,10 +868,11 @@ def handle_callback(callback_query):
             update_user(chat_id, state=state)
             flag, name = SUPPORTED_LANGS[new_lang]
             answer_callback(cq_id, f"{flag} {name}")
+            from_panel = (msg_id == state.get("status_msg_id"))
             edit_text(
                 chat_id, msg_id,
                 t("lang_choose", new_lang, current=f"{flag} {name}"),
-                reply_markup=lang_keyboard(new_lang),
+                reply_markup=lang_keyboard(new_lang, back_to_panel=from_panel),
             )
         return
 
@@ -1100,59 +1098,74 @@ def handle_callback(callback_query):
 
     elif data == "settings:close":
         answer_callback(cq_id, t("settings_saved", lang))
-        lines = [
-            f"{'✅' if tracking.get(k) else '❌'} {label}"
-            for k, label in TRACK_LABELS
-        ]
-        for dr in dynamic_resources:
-            icon = "✅" if tracking.get(dr["key"]) else "❌"
-            lines.append(f"{icon} {dr['emoji']} {dr['label']}")
+        # Если закрываем настройки из панели — возвращаем панель
+        if msg_id == state.get("status_msg_id"):
+            user = get_user(chat_id)
+            last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
+            edit_text(chat_id, msg_id, last_text,
+                      reply_markup=panel_keyboard(lang, user.get("active", True)))
+        else:
+            lines = [
+                f"{'✅' if tracking.get(k) else '❌'} {label}"
+                for k, label in TRACK_LABELS
+            ]
+            for dr in dynamic_resources:
+                icon = "✅" if tracking.get(dr["key"]) else "❌"
+                lines.append(f"{icon} {dr['emoji']} {dr['label']}")
+            repeat = state.get("repeat", {})
+            _rc = int(repeat.get("count", 1))
+            lines.append(f"\n🕐 {tz_display_name(current_tz)}")
+            lines.append(
+                t("repeat_summary_off", lang)
+                if _rc == 0
+                else t("repeat_summary", lang, count=_rc, interval=repeat.get("interval_min", 10))
+            )
+            edit_text(
+                chat_id, msg_id,
+                t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
+            )
+
+    # ── Кнопки панели управления (в закреплённом сообщении) ──────────────────
+
+    elif data == "panel:settings":
+        answer_callback(cq_id)
         repeat = state.get("repeat", {})
-        _rc = int(repeat.get("count", 1))
-        lines.append(f"\n🕐 {tz_display_name(current_tz)}")
-        lines.append(
-            t("repeat_summary_off", lang)
-            if _rc == 0
-            else t("repeat_summary", lang, count=_rc, interval=repeat.get("interval_min", 10))
-        )
         edit_text(
             chat_id, msg_id,
-            t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10))),
         )
 
+    elif data == "panel:lang":
+        answer_callback(cq_id)
+        flag, name = SUPPORTED_LANGS[lang]
+        edit_text(
+            chat_id, msg_id,
+            t("lang_choose", lang, current=f"{flag} {name}"),
+            reply_markup=lang_keyboard(lang, back_to_panel=True),
+        )
 
-def handle_clean(chat_id, command_msg_id):
-    """Удалить все сервисные сообщения бота, оставить статус и уведомления."""
-    user = get_user(chat_id)
-    lang = get_lang(user)
-    if not user:
-        send(chat_id, t("not_registered", lang))
-        return
+    elif data == "panel:stop":
+        update_user(chat_id, active=False)
+        answer_callback(cq_id)
+        last_text = state.get("last_status_text", "⏸")
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
 
-    state = user.get("state") or {}
+    elif data == "panel:resume":
+        update_user(chat_id, active=True)
+        answer_callback(cq_id)
+        last_text = state.get("last_status_text", "▶️")
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
 
-    # ID сообщений которые нужно сохранить
-    keep_ids = set()
-    status_id = state.get("status_msg_id")
-    if status_id:
-        keep_ids.add(status_id)
-    for alert in state.get("ready_alerts", {}).values():
-        if isinstance(alert, dict) and alert.get("mid"):
-            keep_ids.add(alert["mid"])
+    elif data == "panel:close":
+        answer_callback(cq_id)
+        user = get_user(chat_id)
+        last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
+        edit_text(chat_id, msg_id, last_text,
+                  reply_markup=panel_keyboard(lang, user.get("active", True)))
 
-    service_ids = state.get("service_msg_ids", [])
-    # Добавляем и саму команду /clean
-    service_ids.append(command_msg_id)
-
-    deleted = 0
-    for mid in service_ids:
-        if mid and mid not in keep_ids:
-            result = tg("deleteMessage", chat_id=chat_id, message_id=mid)
-            if result is not None or result == True:
-                deleted += 1
-
-    state["service_msg_ids"] = []
-    update_user(chat_id, state=state)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ДИСПЕТЧЕР ОБНОВЛЕНИЙ
@@ -1196,8 +1209,6 @@ def dispatch(update):
         handle_resume(chat_id)
     elif cmd in ("/lang", "/language", "/setlang"):
         handle_lang(chat_id)
-    elif cmd in ("/clean", "/clear"):
-        handle_clean(chat_id, message_id)
     elif cmd in ("/help", "/h"):
         user = get_user(chat_id)
         lang = get_lang(user)

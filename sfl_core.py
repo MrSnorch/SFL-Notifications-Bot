@@ -959,16 +959,40 @@ def tg_send(token: str, chat_id: int, text: str,
         log.warning(f"tg_send error: {e}")
     return None
 
-def tg_edit(token: str, chat_id: int, message_id: int, text: str) -> bool:
+def panel_keyboard(lang: str, is_active: bool) -> dict:
+    """Inline-клавиатура «живого пульта» для закреплённого статус-сообщения."""
+    labels = {
+        "settings": {"ru": "⚙️ Настройки",  "en": "⚙️ Settings",  "uk": "⚙️ Налаштування"},
+        "stop":     {"ru": "⏸ Пауза",        "en": "⏸ Pause",      "uk": "⏸ Пауза"},
+        "resume":   {"ru": "▶️ Возобновить", "en": "▶️ Resume",     "uk": "▶️ Поновити"},
+        "lang":     {"ru": "🌐 Язык",         "en": "🌐 Language",   "uk": "🌐 Мова"},
+    }
+    L = lambda k: labels[k].get(lang) or labels[k]["en"]
+    toggle = (
+        {"text": L("stop"),   "callback_data": "panel:stop"}
+        if is_active else
+        {"text": L("resume"), "callback_data": "panel:resume"}
+    )
+    return {"inline_keyboard": [
+        [{"text": L("settings"), "callback_data": "panel:settings"}],
+        [toggle],
+        [{"text": L("lang"),     "callback_data": "panel:lang"}],
+    ]}
+
+
+def tg_edit(token: str, chat_id: int, message_id: int, text: str,
+            reply_markup: dict = None) -> bool:
     """Редактирует сообщение. Возвращает True при успехе.
     При сетевой ошибке (таймаут и т.п.) бросает исключение наверх —
     чтобы вызывающий код не путал «сообщение удалено» с «сеть недоступна»
     и не слал новое сообщение зря."""
+    payload = {"chat_id": chat_id, "message_id": message_id,
+               "text": text, "parse_mode": "HTML"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     r = requests.post(
         f"https://api.telegram.org/bot{token}/editMessageText",
-        json={"chat_id": chat_id, "message_id": message_id,
-              "text": text, "parse_mode": "HTML"},
-        timeout=20)
+        json=payload, timeout=20)
     return r.ok
 
 def tg_delete(token: str, chat_id: int, message_id: int):
@@ -1007,7 +1031,8 @@ def tg_unpin_message(token: str, chat_id: int, message_id: int) -> bool:
 
 
 def tg_upsert_status(token: str, chat_id: int, text: str,
-                     message_id: int | None) -> tuple[int, bool]:
+                     message_id: int | None,
+                     reply_markup: dict = None) -> tuple[int, bool]:
     """Создаёт или редактирует статус-сообщение.
     Возвращает (message_id, is_new) — is_new=True если создано новое сообщение.
 
@@ -1017,10 +1042,10 @@ def tg_upsert_status(token: str, chat_id: int, text: str,
     """
     if message_id:
         try:
-            if tg_edit(token, chat_id, message_id, text):
+            if tg_edit(token, chat_id, message_id, text, reply_markup=reply_markup):
                 return message_id, False
         except Exception as e:
             log.warning(f"tg_edit network error (skip send): {e}")
             return message_id, False  # сеть упала — старый mid оставляем, не трогаем закреп
-    mid = tg_send(token, chat_id, text, silent=True)
+    mid = tg_send(token, chat_id, text, silent=True, reply_markup=reply_markup)
     return (mid or message_id or 0), True
