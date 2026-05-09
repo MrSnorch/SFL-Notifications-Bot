@@ -39,6 +39,9 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
           SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
+          GH_DISPATCH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY:       ${{ github.repository }}
+          GH_BRANCH:           ${{ github.ref_name }}
         run: |
           python sfl_bot.py --duration 20700
           # 20700с = 5ч 45м — оставляем ~10 мин на restart step

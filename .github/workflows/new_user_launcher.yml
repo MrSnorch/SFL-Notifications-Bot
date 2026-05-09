@@ -9,7 +9,7 @@ name: SFL New User Launcher
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/15 * * * *'   # Резервный запуск — основной триггер через бот (dispatch_new_user_runner)
   workflow_dispatch:
 
 permissions:
