@@ -46,9 +46,32 @@ from sfl_supabase import (
     activate_user_if_ready, upsert_user,
 )
 
-TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TG_TOKEN       = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 SHARED_API_KEY = os.environ.get("SFL_API_KEY", "").strip()
+GH_TOKEN       = os.environ.get("GH_DISPATCH_TOKEN", "").strip()
+GH_REPO        = os.environ.get("GH_REPOSITORY", "").strip()   # формат: owner/repo
+GH_BRANCH      = os.environ.get("GH_BRANCH", "main").strip()
 API_BASE = f"https://api.telegram.org/bot{TG_TOKEN}"
+
+def dispatch_new_user_runner(telegram_id: int):
+    """Запускает scanner_matrix.yml для нового юзера через GitHub API dispatch.
+    Не бросает исключений — фейл логируется и игнорируется."""
+    if not GH_TOKEN or not GH_REPO:
+        log.warning("GH_DISPATCH_TOKEN или GH_REPOSITORY не заданы — dispatch пропущен")
+        return
+    url = f"https://api.github.com/repos/{GH_REPO}/actions/workflows/scanner_matrix.yml/dispatches"
+    payload = {"ref": GH_BRANCH, "inputs": {"single_user": str(telegram_id)}}
+    try:
+        r = requests.post(url, json=payload,
+                          headers={"Authorization": f"Bearer {GH_TOKEN}",
+                                   "Accept": "application/vnd.github+json"},
+                          timeout=10)
+        if r.status_code == 204:
+            log.info(f"[dispatch] 🚀 Runner запущен для юзера {telegram_id}")
+        else:
+            log.warning(f"[dispatch] GitHub ответил {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        log.warning(f"[dispatch] Ошибка запуска runner: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ЛОКАЛИЗАЦИЯ
@@ -720,6 +743,7 @@ def handle_setfarm(chat_id, text):
     update_user(chat_id, farm_id=farm_id)
     was_activated = activate_user_if_ready(chat_id)
     if was_activated:
+        dispatch_new_user_runner(chat_id)
         send_service(chat_id, t("setfarm_ok_active", lang, farm_id=farm_id))
     else:
         send_service(chat_id, t("setfarm_ok_pending", lang, farm_id=farm_id))
@@ -1267,7 +1291,9 @@ def dispatch(update):
                     return
                 # Сохраняем новый farm_id
                 update_user(chat_id, farm_id=text)
-                activate_user_if_ready(chat_id)
+                was_activated = activate_user_if_ready(chat_id)
+                if was_activated:
+                    dispatch_new_user_runner(chat_id)
                 state.pop("awaiting", None)
                 state.pop("awaiting_msg_id", None)
                 update_user(chat_id, state=state)
