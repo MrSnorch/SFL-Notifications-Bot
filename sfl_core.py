@@ -197,6 +197,19 @@ SALT_RESPAWN_MS     = 8  * 3_600_000
 SUNSTONE_RESPAWN_MS = 72 * 3_600_000
 MUSH_SPAWN_MS       = 16 * 3_600_000
 
+# Кулдауны скиллов-способностей (power: true) из bumpkinSkills.ts
+# Ключ — точное название скилла как в API (previousPowerUseAt)
+POWER_SKILL_COOLDOWNS: dict[str, int] = {
+    "Instant Growth":       1000 * 60 * 60 * 72,   # 3 дня
+    "Tree Blitz":           1000 * 60 * 60 * 24,   # 1 день
+    "Barnyard Rouse":       1000 * 60 * 60 * 24 * 5,  # 5 дней
+    "Greenhouse Guru":      1000 * 60 * 60 * 96,   # 4 дня
+    "Instant Gratification":1000 * 60 * 60 * 96,   # 4 дня
+    "Petal Blessed":        1000 * 60 * 60 * 96,   # 4 дня
+    "Grease Lightning":     1000 * 60 * 60 * 96,   # 4 дня
+    "Salt Surge":           1000 * 60 * 60 * 72,   # 3 дня
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # АВТОДЕТЕКТ ДИНАМИЧЕСКИХ РЕСУРСОВ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -716,6 +729,19 @@ def scan_farm(farm: dict, track: dict,
             events.append(Event(atype, emoji, first, len(times), rc,
                 f"{rc}/{len(times)} проснулось" if rc else f"{len(times)} животных",
                 last_ready_at_ms=last_at, resource_key="animals"))
+
+    # ── СКИЛЛЫ-СПОСОБНОСТИ (power skills, кулдаун) ───────────────────────────
+    if track.get("skills", True):
+        prev_use = _d(_d(farm.get("bumpkin")).get("previousPowerUseAt"))
+        for skill_name, last_used_ms in prev_use.items():
+            cooldown_ms = POWER_SKILL_COOLDOWNS.get(skill_name)
+            if not cooldown_ms:
+                continue
+            last_used_ms = _fix_ts(last_used_ms)
+            ready_at_ms = last_used_ms + cooldown_ms
+            rc = 1 if ready_at_ms <= now_ms else 0
+            events.append(Event(skill_name, "⚡", ready_at_ms, 1, rc,
+                resource_key="skills"))
 
     # ── ДИНАМИЧЕСКИЕ РЕСУРСЫ (автодетект) ────────────────────────────────────
     for dr in (dynamic_resources or []):
