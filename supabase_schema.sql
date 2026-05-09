@@ -68,16 +68,11 @@ CREATE INDEX IF NOT EXISTS idx_users_active ON users(active) WHERE active = TRUE
 -- использует anon key с правами ниже, либо service_role key)
 -- ============================================================
 
--- Для простоты на старте: отключаем RLS, доступ только через anon key
--- (Supabase anon key не публичный — он хранится в GitHub Secrets)
+-- RLS включён. Публичных политик нет намеренно.
+-- Бот/сканер использует SUPABASE_SERVICE_KEY из GitHub Secrets,
+-- который обходит RLS полностью. Никогда не кладите service_role key
+-- в клиентский код или Telegram-сообщения.
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-
--- Политика: разрешаем всё через anon key (ключ только у тебя в Secrets)
-CREATE POLICY "Allow all for anon" ON users
-    FOR ALL
-    TO anon
-    USING (true)
-    WITH CHECK (true);
 
 -- ============================================================
 -- Проверка после создания

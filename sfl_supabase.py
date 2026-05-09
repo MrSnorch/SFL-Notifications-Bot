@@ -10,7 +10,7 @@ import requests
 log = logging.getLogger("SFL")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")  # anon key
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_KEY", "")
 
 DEFAULT_TRACKING = {
     "crops": True, "trees": True, "stones": True, "iron": True,
