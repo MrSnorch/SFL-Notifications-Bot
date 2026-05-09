@@ -124,9 +124,9 @@ def get_or_create_user(telegram_id: int, username: str = "",
 
 
 def activate_user_if_ready(telegram_id: int) -> bool:
-    """Активирует пользователя если заданы farm_id и api_key."""
+    """Активирует пользователя если задан farm_id (api_key больше не требуется — используется общий)."""
     user = get_user(telegram_id)
-    if user and user.get("farm_id") and user.get("api_key"):
-        update_user(telegram_id, active=True)
+    if user and user.get("farm_id"):
+        update_user(telegram_id, active=True, scanner_dispatched=False)
         return True
     return False

@@ -37,7 +37,8 @@ from sfl_supabase import (
     get_all_active_users, get_user, load_state, save_state, update_user,
 )
 
-TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+SHARED_API_KEY = os.environ.get("SFL_API_KEY", "").strip()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ОБРАБОТКА АЛЕРТОВ ГОТОВНОСТИ
@@ -147,7 +148,7 @@ def scan_user(user: dict) -> "int | None":
     или None если всё уже готово / нет событий."""
     telegram_id = user["telegram_id"]
     farm_id     = user.get("farm_id", "")
-    api_key     = user.get("api_key", "")
+    api_key     = SHARED_API_KEY
     tracking    = user.get("tracking") or {}
     username    = user.get("username") or user.get("first_name") or str(telegram_id)
 

@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS users (
     -- Активен ли мониторинг
     active        BOOLEAN DEFAULT FALSE,
 
+    -- Флаг: был ли юзер уже запущен в матрице/runner
+    -- FALSE = новый юзер, ожидает запуска launcher'ом
+    -- TRUE  = runner уже работает (выставляет prepare / full run)
+    scanner_dispatched BOOLEAN DEFAULT FALSE,
+
     -- Служебные поля
     created_at    TIMESTAMPTZ DEFAULT NOW(),
     updated_at    TIMESTAMPTZ DEFAULT NOW()
@@ -61,6 +66,14 @@ CREATE TRIGGER users_updated_at
 
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active) WHERE active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_users_pending_dispatch ON users(active, scanner_dispatched)
+    WHERE active = TRUE AND scanner_dispatched = FALSE;
+
+-- ============================================================
+-- Миграция для существующих баз (выполни если таблица уже есть)
+-- ============================================================
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS scanner_dispatched BOOLEAN DEFAULT FALSE;
+-- UPDATE users SET scanner_dispatched = TRUE WHERE active = TRUE;
 
 -- ============================================================
 -- Row Level Security

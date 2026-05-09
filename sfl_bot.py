@@ -46,7 +46,8 @@ from sfl_supabase import (
     activate_user_if_ready, upsert_user,
 )
 
-TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+SHARED_API_KEY = os.environ.get("SFL_API_KEY", "").strip()
 API_BASE = f"https://api.telegram.org/bot{TG_TOKEN}"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,35 +67,17 @@ STRINGS = {
         "ru": (
             "🌻 <b>SFL Farm Notifier</b>\n\n"
             "Привет! Я буду следить за твоей фермой в Sunflower Land и присылать уведомления когда ресурсы готовы.\n\n"
-            "Для начала настрой:\n"
-            "1️⃣ /setfarm <code>12345</code> — укажи ID фермы\n"
-            "2️⃣ /setkey <code>твой_api_ключ</code> — укажи API ключ\n\n"
-            "Как получить API ключ:\n"
-            "• Зайди на <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
-            "• Настройки → Community API → Create Key\n\n"
-            "После настройки уведомления включатся автоматически! 🚀"
+            "Введи <b>ID своей фермы</b> (только цифры):"
         ),
         "en": (
             "🌻 <b>SFL Farm Notifier</b>\n\n"
             "Hello! I'll monitor your Sunflower Land farm and send notifications when resources are ready.\n\n"
-            "To get started:\n"
-            "1️⃣ /setfarm <code>12345</code> — set your farm ID\n"
-            "2️⃣ /setkey <code>your_api_key</code> — set your API key\n\n"
-            "How to get an API key:\n"
-            "• Go to <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
-            "• Settings → Community API → Create Key\n\n"
-            "Notifications will turn on automatically once you're set up! 🚀"
+            "Please enter your <b>Farm ID</b> (numbers only):"
         ),
         "uk": (
             "🌻 <b>SFL Farm Notifier</b>\n\n"
             "Привіт! Я стежитиму за твоєю фермою у Sunflower Land і надсилатиму сповіщення, коли ресурси готові.\n\n"
-            "Для початку налаштуй:\n"
-            "1️⃣ /setfarm <code>12345</code> — вкажи ID ферми\n"
-            "2️⃣ /setkey <code>твій_api_ключ</code> — вкажи API ключ\n\n"
-            "Як отримати API ключ:\n"
-            "• Зайди на <a href=\"https://sunflower-land.com\">sunflower-land.com</a>\n"
-            "• Налаштування → Community API → Create Key\n\n"
-            "Після налаштування сповіщення увімкнуться автоматично! 🚀"
+            "Введи <b>ID своєї ферми</b> (тільки цифри):"
         ),
     },
     "help": {
@@ -102,7 +85,6 @@ STRINGS = {
             "🌻 <b>SFL Farm Notifier — Команды</b>\n\n"
             "/start — перезапустить бота\n"
             "/setfarm <code>ID</code> — установить ID фермы\n"
-            "/setkey <code>KEY</code> — установить API ключ\n"
             "/settings — настроить что отслеживать\n"
             "/status — проверить ферму прямо сейчас\n"
             "/stop — приостановить уведомления\n"
@@ -114,7 +96,6 @@ STRINGS = {
             "🌻 <b>SFL Farm Notifier — Commands</b>\n\n"
             "/start — restart the bot\n"
             "/setfarm <code>ID</code> — set farm ID\n"
-            "/setkey <code>KEY</code> — set API key\n"
             "/settings — configure what to track\n"
             "/status — check farm right now\n"
             "/stop — pause notifications\n"
@@ -126,7 +107,6 @@ STRINGS = {
             "🌻 <b>SFL Farm Notifier — Команди</b>\n\n"
             "/start — перезапустити бота\n"
             "/setfarm <code>ID</code> — встановити ID ферми\n"
-            "/setkey <code>KEY</code> — встановити API ключ\n"
             "/settings — налаштувати що відстежувати\n"
             "/status — перевірити ферму прямо зараз\n"
             "/stop — призупинити сповіщення\n"
@@ -717,7 +697,12 @@ def handle_start(chat_id, user_from):
     )
     user = get_user(chat_id)
     lang = get_lang(user)
-    send_service(chat_id, t("welcome", lang), silent=True)
+    msg = send_service(chat_id, t("welcome", lang), silent=True)
+    # Сразу ждём ввода farm_id — пользователь просто отправляет число
+    state = (user.get("state") or {})
+    state["awaiting"] = "farm_id"
+    state["awaiting_msg_id"] = msg["message_id"] if msg else None
+    update_user(chat_id, state=state)
 
 
 def handle_setfarm(chat_id, text):
@@ -787,13 +772,16 @@ def handle_settings(chat_id):
 def handle_status(chat_id):
     user = get_user(chat_id)
     lang = get_lang(user)
-    if not user or not user.get("farm_id") or not user.get("api_key"):
+    if not user or not user.get("farm_id"):
+        send_service(chat_id, t("status_no_farm", lang))
+        return
+    if not SHARED_API_KEY:
         send_service(chat_id, t("status_no_farm", lang))
         return
     msg = send_service(chat_id, t("status_loading", lang))
     loading_msg_id = msg["message_id"] if msg else None
     try:
-        farm     = load_from_api(user["farm_id"], user["api_key"])
+        farm     = load_from_api(user["farm_id"], SHARED_API_KEY)
         tracking = user.get("tracking") or DEFAULT_TRACKING
         state    = user.get("state") or {}
         newly_found       = discover_dynamic_resources(farm)
@@ -850,7 +838,7 @@ def handle_resume(chat_id):
     if not user:
         send(chat_id, t("not_registered", lang))
         return
-    if not user.get("farm_id") or not user.get("api_key"):
+    if not user.get("farm_id"):
         send_service(chat_id, t("resume_no_farm", lang))
         return
     update_user(chat_id, active=True)
