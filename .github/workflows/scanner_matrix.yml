@@ -41,7 +41,7 @@ jobs:
         id: get_users
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SINGLE_USER:  ${{ inputs.single_user }}
         run: |
           if [ -n "$SINGLE_USER" ]; then
@@ -96,7 +96,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           python sfl_scanner.py \
             --user ${{ matrix.telegram_id }} \
