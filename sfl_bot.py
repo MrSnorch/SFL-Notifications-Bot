@@ -1126,6 +1126,17 @@ def handle_callback(callback_query):
             reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
         )
 
+    elif data.startswith("dismiss:"):
+        # Закрытие алерта о готовности кнопкой ❌
+        alert_key = data[len("dismiss:"):]
+        alerts_state = state.get("ready_alerts", {})
+        if alert_key in alerts_state:
+            del alerts_state[alert_key]
+            state["ready_alerts"] = alerts_state
+            update_user(chat_id, state=state)
+        delete_msg(chat_id, msg_id)
+        answer_callback(cq_id)
+
     elif data == "noop":
         answer_callback(cq_id)
 
