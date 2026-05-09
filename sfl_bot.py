@@ -1131,7 +1131,10 @@ def handle_callback(callback_query):
         alert_key = data[len("dismiss:"):]
         alerts_state = state.get("ready_alerts", {})
         if alert_key in alerts_state:
-            del alerts_state[alert_key]
+            # Не удаляем запись — ставим флаг, чтобы сканер не повторял алерт
+            # до следующего реального события (смены wave_anchor при следующем сборе).
+            alerts_state[alert_key]["dismissed"] = True
+            alerts_state[alert_key]["mid"] = 0  # сообщение уже удалено
             state["ready_alerts"] = alerts_state
             update_user(chat_id, state=state)
         delete_msg(chat_id, msg_id)
