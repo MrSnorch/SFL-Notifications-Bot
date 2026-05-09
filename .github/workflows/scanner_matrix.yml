@@ -55,6 +55,17 @@ jobs:
               -H "apikey: ${SUPABASE_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               | python3 -c "import sys,json; ids=[str(u['telegram_id']) for u in json.load(sys.stdin)]; print(json.dumps(ids))")
+
+            # Помечаем всех запущенных юзеров как dispatched
+            # (новые юзеры с scanner_dispatched=false будут подхвачены launcher'ом)
+            curl -sf -X PATCH \
+              "${SUPABASE_URL}/rest/v1/users?active=eq.true" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"scanner_dispatched": true}' \
+              && echo "✅ Все активные юзеры помечены scanner_dispatched=true" \
+              || echo "⚠️ Не удалось обновить scanner_dispatched (некритично)"
           fi
 
           COUNT=$(echo "$USERS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
@@ -97,6 +108,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
         run: |
           python sfl_scanner.py \
             --user ${{ matrix.telegram_id }} \
@@ -119,27 +131,37 @@ jobs:
             && echo "✅ Retry triggered" \
             || echo "⚠️ Failed to trigger retry"
 
-  # ── Шаг 3: self-restart для полного цикла (только при полном запуске) ──────
+  # ── Шаг 3: self-restart ────────────────────────────────────────────────────
   restart:
     needs: scan
-    # Не рестартуем если это был точечный retry отдельного юзера
-    # Рестарт только из workflow_dispatch (не из cron).
+    # Рестарт при любом workflow_dispatch:
+    # - full run (single_user == '') → перезапускает полную матрицу
+    # - single_user run             → перезапускает только этого юзера
+    #   (полная матрица его подхватит на следующем цикле и закроет этот runner
+    #    через per-user concurrency)
     # Cron — чистая страховка: запустил и всё, без продолжения цепочки.
-    # Иначе cron + self-restart одновременно убивают друг друга через per-user concurrency.
-    if: always() && github.event_name == 'workflow_dispatch' && inputs.single_user == ''
+    if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: sfl-matrix-restart
-      cancel-in-progress: true  # Дублирующий restart не нужен
+      cancel-in-progress: true
     steps:
-      - name: Trigger next full matrix run
+      - name: Trigger next run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SINGLE_USER:  ${{ inputs.single_user }}
         run: |
+          if [ -n "$SINGLE_USER" ]; then
+            echo "🔄 Перезапуск single_user runner для юзера ${SINGLE_USER}..."
+            PAYLOAD="{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"single_user\":\"${SINGLE_USER}\"}}"
+          else
+            echo "🔄 Перезапуск полной матрицы..."
+            PAYLOAD="{\"ref\":\"${{ github.ref_name }}\"}"
+          fi
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
-            -d "{\"ref\":\"${{ github.ref_name }}\"}" \
-            && echo "✅ Next full run triggered" \
+            -d "$PAYLOAD" \
+            && echo "✅ Next run triggered" \
             || echo "⚠️ Failed (cron will catch it)"

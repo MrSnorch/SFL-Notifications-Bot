@@ -1,0 +1,92 @@
+name: SFL New User Launcher
+
+# Запускается каждые 5 минут.
+# Находит активных юзеров с scanner_dispatched=false
+# и запускает для каждого отдельный runner через scanner_matrix.yml (single_user).
+# Этот runner самостоятельно перезапускает себя до тех пор, пока
+# очередной полный прогон матрицы не подхватит юзера и не вытеснит его
+# через per-user concurrency (group: sfl-user-{telegram_id}).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+# Только один launcher одновременно — новый отменяет предыдущий (он быстрый)
+concurrency:
+  group: sfl-new-user-launcher
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Find and launch new users
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Получаем юзеров у которых active=true и scanner_dispatched=false
+          NEW_USERS=$(curl -sf \
+            "${SUPABASE_URL}/rest/v1/users?active=eq.true&scanner_dispatched=eq.false&select=telegram_id" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            | python3 -c "
+          import sys, json
+          users = json.load(sys.stdin)
+          ids = [str(u['telegram_id']) for u in users]
+          print('\n'.join(ids))
+          ")
+
+          if [ -z "$NEW_USERS" ]; then
+            echo "✅ Новых юзеров нет — ничего не запускаем"
+            exit 0
+          fi
+
+          echo "🆕 Новые юзеры для запуска:"
+          echo "$NEW_USERS"
+
+          # Для каждого нового юзера — помечаем dispatched и запускаем runner
+          while IFS= read -r TG_ID; do
+            [ -z "$TG_ID" ] && continue
+
+            # Помечаем сразу до dispatch, чтобы не запустить дважды при параллельном запуске
+            curl -sf -X PATCH \
+              "${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${TG_ID}" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"scanner_dispatched": true}' \
+              && echo "  ✅ ${TG_ID}: scanner_dispatched=true" \
+              || echo "  ⚠️ ${TG_ID}: не удалось обновить флаг"
+
+            # Запускаем single_user runner
+            RESULT=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
+              -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"single_user\":\"${TG_ID}\"}}")
+
+            if [ "$RESULT" = "204" ]; then
+              echo "  🚀 ${TG_ID}: runner запущен (HTTP ${RESULT})"
+            else
+              # Откатываем флаг если dispatch не удался
+              echo "  ❌ ${TG_ID}: dispatch упал (HTTP ${RESULT}), откатываем scanner_dispatched"
+              curl -sf -X PATCH \
+                "${SUPABASE_URL}/rest/v1/users?telegram_id=eq.${TG_ID}" \
+                -H "apikey: ${SUPABASE_KEY}" \
+                -H "Authorization: Bearer ${SUPABASE_KEY}" \
+                -H "Content-Type: application/json" \
+                -d '{"scanner_dispatched": false}' || true
+            fi
+
+            # Пауза между dispatch'ами чтобы не нагружать GitHub API
+            sleep 2
+          done <<< "$NEW_USERS"

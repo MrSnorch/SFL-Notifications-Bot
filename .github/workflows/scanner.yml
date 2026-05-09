@@ -38,6 +38,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
         run: |
           python sfl_scanner.py --duration 20700 --interval 30
           # 20700с = 5ч 45м — оставляем ~10 мин на restart step
