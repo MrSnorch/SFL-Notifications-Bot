@@ -732,11 +732,15 @@ def scan_farm(farm: dict, track: dict,
 
     # ── СКИЛЛЫ-СПОСОБНОСТИ (power skills, кулдаун) ───────────────────────────
     if track.get("skills", True):
-        prev_use = _d(_d(farm.get("bumpkin")).get("previousPowerUseAt"))
+        bumpkin      = _d(farm.get("bumpkin"))
+        active_skills = _d(bumpkin.get("skills"))
+        prev_use     = _d(bumpkin.get("previousPowerUseAt"))
         for skill_name, last_used_ms in prev_use.items():
             cooldown_ms = POWER_SKILL_COOLDOWNS.get(skill_name)
             if not cooldown_ms:
                 continue
+            if skill_name not in active_skills:
+                continue  # скилл сброшен — игнорируем
             last_used_ms = _fix_ts(last_used_ms)
             ready_at_ms = last_used_ms + cooldown_ms
             rc = 1 if ready_at_ms <= now_ms else 0
