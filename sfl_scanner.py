@@ -107,6 +107,11 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                         "last_sent_at": now,
                     }
             else:
+                if stored.get("dismissed"):
+                    # Пользователь закрыл алерт кнопкой ❌ — не повторяем.
+                    # current_ready уже содержит этот ключ, поэтому cleanup не сработает
+                    # пока wave_anchor не изменится (ресурс собран → новый скан).
+                    continue
                 mid       = stored["mid"]
                 old_rc    = stored.get("ready_count", -1)
                 old_c     = stored.get("count", e.count)
@@ -141,8 +146,9 @@ def process_ready_alerts(chat_id: int, events: list[Event],
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
         if key not in current_ready:
-            mid = alerts_state[key]["mid"]
-            tg_delete(TG_TOKEN, chat_id, mid)
+            mid = alerts_state[key].get("mid", 0)
+            if mid:  # mid=0 означает dismissed — сообщение уже удалено пользователем
+                tg_delete(TG_TOKEN, chat_id, mid)
             del alerts_state[key]
 
     return alerts_state
