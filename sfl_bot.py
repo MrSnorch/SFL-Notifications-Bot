@@ -205,6 +205,31 @@ STRINGS = {
         "en": "◀️ Back to settings",
         "uk": "◀️ Назад до налаштувань",
     },
+    "setfarm_btn_change": {
+        "ru": "🏡 Изменить ферму: {farm_id}",
+        "en": "🏡 Change farm: {farm_id}",
+        "uk": "🏡 Змінити ферму: {farm_id}",
+    },
+    "setfarm_prompt": {
+        "ru": "🏡 <b>Изменить ID фермы</b>\n\nТекущий: <code>{farm_id}</code>\n\nОтправь мне новый ID фермы (только цифры):",
+        "en": "🏡 <b>Change Farm ID</b>\n\nCurrent: <code>{farm_id}</code>\n\nSend me your new farm ID (numbers only):",
+        "uk": "🏡 <b>Змінити ID ферми</b>\n\nПоточний: <code>{farm_id}</code>\n\nНадішли мені новий ID ферми (тільки цифри):",
+    },
+    "setfarm_prompt_cancel": {
+        "ru": "❌ Отмена",
+        "en": "❌ Cancel",
+        "uk": "❌ Скасувати",
+    },
+    "setfarm_changed": {
+        "ru": "✅ Ферма изменена на <b>{farm_id}</b>",
+        "en": "✅ Farm changed to <b>{farm_id}</b>",
+        "uk": "✅ Ферму змінено на <b>{farm_id}</b>",
+    },
+    "setfarm_invalid": {
+        "ru": "❌ ID фермы должен быть числом. Попробуй снова:",
+        "en": "❌ Farm ID must be a number. Try again:",
+        "uk": "❌ ID ферми має бути числом. Спробуй ще раз:",
+    },
     "settings_unknown_resource": {
         "ru": "Неизвестный ресурс",
         "en": "Unknown resource",
@@ -644,7 +669,7 @@ def repeat_resource_keyboard(lang: str, resource_key: str,
 
 
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                      repeat_count=3, repeat_interval_min=10):
+                      repeat_count=3, repeat_interval_min=10, farm_id="?"):
     """Inline-клавиатура для /settings."""
     buttons = []
     for key, label in TRACK_LABELS:
@@ -669,6 +694,10 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     buttons.append([{
         "text": repeat_label,
         "callback_data": "repeat_list",
+    }])
+    buttons.append([{
+        "text": t("setfarm_btn_change", lang, farm_id=farm_id),
+        "callback_data": "setfarm_prompt",
     }])
     buttons.append([{
         "text": t("settings_btn_save", lang),
@@ -751,7 +780,8 @@ def handle_settings(chat_id):
         text += t("settings_dynamic_note", lang, count=len(dynamic_resources))
     send_service(chat_id, text,
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                                        repeat_count, repeat_interval))
+                                        repeat_count, repeat_interval,
+                                        farm_id=user.get("farm_id", "?")))
 
 
 def handle_status(chat_id):
@@ -890,7 +920,8 @@ def handle_callback(callback_query):
                 chat_id, msg_id,
                 t("settings_title", lang),
                 reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                                               _repeat_count, _repeat_intv),
+                                               _repeat_count, _repeat_intv,
+                                               farm_id=user.get("farm_id", "?")),
             )
         else:
             answer_callback(cq_id, t("settings_unknown_resource", lang))
@@ -914,7 +945,8 @@ def handle_callback(callback_query):
             t("settings_title", lang),
             reply_markup=settings_keyboard(tracking, dynamic_resources, new_tz, lang,
                                            int(repeat.get("count", 1)),
-                                           int(repeat.get("interval_min", 10))),
+                                           int(repeat.get("interval_min", 10)),
+                                           farm_id=user.get("farm_id", "?")),
         )
 
     elif data.startswith("repeat_count:"):
@@ -1093,7 +1125,8 @@ def handle_callback(callback_query):
             t("settings_title", lang),
             reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                            int(repeat.get("count", 1)),
-                                           int(repeat.get("interval_min", 10))),
+                                           int(repeat.get("interval_min", 10)),
+                                           farm_id=user.get("farm_id", "?")),
         )
 
     elif data == "settings:close":
@@ -1125,6 +1158,37 @@ def handle_callback(callback_query):
                 t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
             )
 
+    elif data == "setfarm_prompt":
+        answer_callback(cq_id)
+        state["awaiting"] = "farm_id"
+        state["awaiting_msg_id"] = msg_id
+        update_user(chat_id, state=state)
+        edit_text(
+            chat_id, msg_id,
+            t("setfarm_prompt", lang, farm_id=user.get("farm_id", "?")),
+            reply_markup={"inline_keyboard": [[{
+                "text": t("setfarm_prompt_cancel", lang),
+                "callback_data": "setfarm_cancel",
+            }]]},
+        )
+
+    elif data == "setfarm_cancel":
+        answer_callback(cq_id)
+        state.pop("awaiting", None)
+        state.pop("awaiting_msg_id", None)
+        update_user(chat_id, state=state)
+        # Перезагружаем пользователя чтобы получить актуальный farm_id
+        user = get_user(chat_id)
+        repeat = state.get("repeat", {})
+        edit_text(
+            chat_id, msg_id,
+            t("settings_title", lang),
+            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                           int(repeat.get("count", 1)),
+                                           int(repeat.get("interval_min", 10)),
+                                           farm_id=user.get("farm_id", "?")),
+        )
+
     # ── Кнопки панели управления (в закреплённом сообщении) ──────────────────
 
     elif data == "panel:settings":
@@ -1135,7 +1199,8 @@ def handle_callback(callback_query):
             t("settings_title", lang),
             reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                            int(repeat.get("count", 1)),
-                                           int(repeat.get("interval_min", 10))),
+                                           int(repeat.get("interval_min", 10)),
+                                           farm_id=user.get("farm_id", "?")),
         )
 
     elif data == "panel:lang":
@@ -1190,6 +1255,51 @@ def dispatch(update):
 
     if msg["chat"]["type"] != "private":
         return
+
+    # ── Ожидание ввода farm_id ────────────────────────────────────────────────
+    if not text.startswith("/"):
+        user = get_user(chat_id)
+        if user:
+            state = user.get("state") or {}
+            if state.get("awaiting") == "farm_id":
+                lang = get_lang(user)
+                prompt_msg_id = state.get("awaiting_msg_id")
+                delete_msg(chat_id, message_id)
+                if not text.isdigit():
+                    # Невалидный ввод — обновляем подсказку
+                    if prompt_msg_id:
+                        edit_text(
+                            chat_id, prompt_msg_id,
+                            t("setfarm_invalid", lang),
+                            reply_markup={"inline_keyboard": [[{
+                                "text": t("setfarm_prompt_cancel", lang),
+                                "callback_data": "setfarm_cancel",
+                            }]]},
+                        )
+                    return
+                # Сохраняем новый farm_id
+                update_user(chat_id, farm_id=text)
+                activate_user_if_ready(chat_id)
+                state.pop("awaiting", None)
+                state.pop("awaiting_msg_id", None)
+                update_user(chat_id, state=state)
+                user = get_user(chat_id)
+                tracking          = user.get("tracking") or DEFAULT_TRACKING
+                dynamic_resources = state.get("discovered_resources", [])
+                current_tz        = state.get("timezone")
+                repeat            = state.get("repeat", {})
+                if prompt_msg_id:
+                    edit_text(
+                        chat_id, prompt_msg_id,
+                        t("settings_title", lang) + "\n\n" + t("setfarm_changed", lang, farm_id=text),
+                        reply_markup=settings_keyboard(
+                            tracking, dynamic_resources, current_tz, lang,
+                            int(repeat.get("count", 1)),
+                            int(repeat.get("interval_min", 10)),
+                            farm_id=text,
+                        ),
+                    )
+                return
 
     cmd = text.split()[0].lower().split("@")[0]
 
