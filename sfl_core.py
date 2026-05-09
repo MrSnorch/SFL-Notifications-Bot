@@ -804,6 +804,16 @@ _I18N = {
         "en": "\n✅ <b>Ready to harvest:</b>",
         "uk": "\n✅ <b>Готово до збору:</b>",
     },
+    "ready_skills_section": {
+        "ru": "\n✅ <b>Готово к использованию:</b>",
+        "en": "\n✅ <b>Ready to use:</b>",
+        "uk": "\n✅ <b>Готово до використання:</b>",
+    },
+    "skill_ready_alert": {
+        "ru": "{emoji} <b>{name} — готово к использованию ✅</b>",
+        "en": "{emoji} <b>{name} — ready to use ✅</b>",
+        "uk": "{emoji} <b>{name} — готово до використання ✅</b>",
+    },
     "updated_at": {
         "ru": "\n<i>Обновлено: {ts}</i>",
         "en": "\n<i>Updated: {ts}</i>",
@@ -933,12 +943,17 @@ def format_status_message(events: list[Event], farm_id: str,
         for _, line in sorted(display_items, key=lambda x: x[0])[:20]:
             lines.append(line)
 
-    ready_now = [e for e in events if e.ready_count > 0]
-    if ready_now:
+    ready_resources = [e for e in events if e.ready_count > 0 and e.resource_key != "skills"]
+    ready_skills    = [e for e in events if e.ready_count > 0 and e.resource_key == "skills"]
+    if ready_resources:
         lines.append(_i18n("ready_section", lang))
-        for e in ready_now:
+        for e in ready_resources:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
             lines.append(f"  {e.emoji} {e.name}{cnt}")
+    if ready_skills:
+        lines.append(_i18n("ready_skills_section", lang))
+        for e in ready_skills:
+            lines.append(f"  {e.emoji} {e.name}")
 
     ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
     lines.append(_i18n("updated_at", lang, ts=ts))
@@ -955,6 +970,8 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
         all_ready_soon = (e.last_ready_at_ms - now_ms) <= 30_000
         effective_ready = e.count if all_ready_soon else e.ready_count
     cnt = f" [{effective_ready}/{e.count}]" if e.count > 1 else ""
+    if getattr(e, "resource_key", "") == "skills":
+        return _i18n("skill_ready_alert", lang, emoji=e.emoji, name=e.name)
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
     return _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
@@ -1019,7 +1036,13 @@ def tg_edit(token: str, chat_id: int, message_id: int, text: str,
     r = requests.post(
         f"https://api.telegram.org/bot{token}/editMessageText",
         json=payload, timeout=20)
-    return r.ok
+    if r.ok:
+        return True
+    # "message is not modified" — сообщение существует, текст не изменился → считаем успехом.
+    # Это НЕ значит что сообщение удалено, поэтому возвращаем True чтобы не создавать дубль закрепа.
+    if r.status_code == 400 and "is not modified" in r.text:
+        return True
+    return False
 
 def tg_delete(token: str, chat_id: int, message_id: int):
     try:
