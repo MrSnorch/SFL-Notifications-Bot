@@ -31,7 +31,7 @@ from sfl_core import (
     tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
     tg_unpin_message, Event, split_ready_into_waves,
     discover_dynamic_resources, merge_discovered,
-    get_tz, panel_keyboard,
+    get_tz, panel_keyboard, format_quest_notification,
 )
 from sfl_supabase import (
     get_all_active_users, get_user, load_state, save_state, update_user,
@@ -275,6 +275,26 @@ def scan_user(user: dict) -> "int | None":
         repeat_interval_sec=repeat_interval,
         repeat_by_key=repeat_by_key,
     )
+
+    # ── Квест (Pumpkin Pete) ──────────────────────────────────────────────────
+    tg_data   = farm.get("telegram") or {}
+    quest     = tg_data.get("quest") or {}
+    q_name    = quest.get("name", "")
+    q_choices = quest.get("choices", [])
+    last_quest_notified = state.get("last_quest_notified", "")
+
+    if q_name and not q_choices and q_name != last_quest_notified:
+        # Новый квест, игрок ещё не выбрал — отправляем уведомление
+        text = format_quest_notification(q_name, lang=_lang)
+        tg_send(TG_TOKEN, telegram_id, text)
+        state["last_quest_notified"] = q_name
+        log.info(f"[{username}] Новый квест: {q_name}")
+    elif q_choices and q_name and q_name == last_quest_notified:
+        # Игрок ответил на квест — сбрасываем чтобы следующий квест с таким же именем
+        # (если повторится) снова уведомил. На практике квесты не повторяются,
+        # но это защита от edge case.
+        pass  # last_quest_notified остаётся — повторное уведомление не нужно
+
     state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])
 
     save_state(telegram_id, state)
