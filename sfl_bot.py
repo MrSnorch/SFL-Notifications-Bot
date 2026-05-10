@@ -852,8 +852,16 @@ def handle_status(chat_id):
                 send_service(chat_id, t("status_new_resources", lang, labels=labels))
         events       = scan_farm(farm, tracking, dynamic_resources)
         user_tz      = get_tz(state.get("timezone"))
+        _dr          = farm.get("dailyRewards") or {}
+        _dr_collected_ms = (_dr.get("chest") or {}).get("collectedAt", 0)
+        from datetime import datetime, timezone as _utc_tz
+        _today_str   = datetime.now(_utc_tz).strftime("%Y-%m-%d")
+        _collected   = (bool(_dr_collected_ms) and
+                        datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz).strftime("%Y-%m-%d") == _today_str)
+        daily_info   = {"streaks": _dr.get("streaks", 0), "collected_today": _collected}
         status_text  = format_status_message(events, user["farm_id"], tz=user_tz,
-                                             time_format=state.get("time_format", "both"))
+                                             time_format=state.get("time_format", "both"),
+                                             daily_info=daily_info)
         is_active    = user.get("active", True)
         kb           = panel_keyboard(lang, is_active)
         old_status_id = state.get("status_msg_id")
@@ -1191,6 +1199,17 @@ def handle_callback(callback_query):
             t("repeat_list_title", lang),
             reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
         )
+
+    elif data == "daily_dismiss":
+        # Ручное закрытие напоминания о Daily Rewards кнопкой ❌
+        if state.get("daily_reminder_msg_id") == msg_id:
+            from datetime import datetime, timezone as _utc_tz
+            today_str = datetime.now(_utc_tz).strftime("%Y-%m-%d")
+            state["daily_reminder_msg_id"]          = 0
+            state["daily_reminder_dismissed_date"]  = today_str
+            update_user(chat_id, state=state)
+        delete_msg(chat_id, msg_id)
+        answer_callback(cq_id)
 
     elif data == "quest_dismiss":
         # Ручное закрытие уведомления о Questе кнопкой ❌

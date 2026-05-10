@@ -894,6 +894,26 @@ _I18N = {
         "en": "🎁 <b>New quest available!</b>",
         "uk": "🎁 <b>Новий Quest доступний!</b>",
     },
+    "daily_reward_ready": {
+        "ru": "🎁 <b>Ежедневная награда доступна!</b>\n🔥 Стрик: {streaks} дн.",
+        "en": "🎁 <b>Daily reward is ready!</b>\n🔥 Streak: {streaks} days",
+        "uk": "🎁 <b>Щоденна нагорода доступна!</b>\n🔥 Стрік: {streaks} дн.",
+    },
+    "daily_reward_reminder": {
+        "ru": "⏰ <b>Не забудь забрать ежедневную награду!</b>\nОсталось {hours} ч. до сброса\n🔥 Стрик: {streaks} дн.",
+        "en": "⏰ <b>Don't forget your daily reward!</b>\n{hours} h. until reset\n🔥 Streak: {streaks} days",
+        "uk": "⏰ <b>Не забудь забрати щоденну нагороду!</b>\nЗалишилось {hours} год. до скидання\n🔥 Стрік: {streaks} дн.",
+    },
+    "daily_status_collected": {
+        "ru": "🎁 Daily: ✅ стрик <b>{streaks}</b> дн.",
+        "en": "🎁 Daily: ✅ streak <b>{streaks}</b> days",
+        "uk": "🎁 Daily: ✅ стрік <b>{streaks}</b> дн.",
+    },
+    "daily_status_pending": {
+        "ru": "🎁 Daily: ⏳ <b>не забери!</b> стрик {streaks} дн.",
+        "en": "🎁 Daily: ⏳ <b>collect it!</b> streak {streaks} days",
+        "uk": "🎁 Daily: ⏳ <b>забери!</b> стрік {streaks} дн.",
+    },
 }
 
 
@@ -965,7 +985,8 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
 
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru",
-                           time_format: str = "both") -> str:
+                           time_format: str = "both",
+                           daily_info: dict | None = None) -> str:
     # time_format: "both" = countdown + clock, "countdown" = countdown only, "clock" = clock only
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
@@ -974,6 +995,13 @@ def format_status_message(events: list[Event], farm_id: str,
 
     pending = [e for e in events if e.ready_count < e.count]
     lines = [_i18n("farm_header", lang, farm_id=farm_id)]
+
+    if daily_info is not None:
+        _streaks = daily_info.get("streaks", 0)
+        if daily_info.get("collected_today"):
+            lines.append(_i18n("daily_status_collected", lang, streaks=_streaks))
+        else:
+            lines.append(_i18n("daily_status_pending", lang, streaks=_streaks))
 
     if not pending:
         lines.append(_i18n("all_ready", lang))
@@ -1474,6 +1502,16 @@ QUEST_DATA: dict[str, dict] = {
     #     "choices": [("Emoji Вариант", "Награда"), ...],
     # },
 }
+
+def format_daily_reward_ready(streaks: int, lang: str = "ru") -> str:
+    """Уведомление в 00:00 UTC — награда доступна."""
+    return _i18n("daily_reward_ready", lang, streaks=streaks)
+
+
+def format_daily_reminder(streaks: int, hours_left: int, lang: str = "ru") -> str:
+    """Ежечасное напоминание в 19-23 UTC если награда не собрана."""
+    return _i18n("daily_reward_reminder", lang, streaks=streaks, hours=hours_left)
+
 
 # Алиасы для квестов с апострофом — API может вернуть любой из вариантов:
 # без апострофа (основной), с апострофом, или апостроф → дефис.

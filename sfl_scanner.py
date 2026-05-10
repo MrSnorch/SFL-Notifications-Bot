@@ -26,12 +26,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("SFL")
 
+from datetime import datetime, timezone as _utc_tz
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
     tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
     tg_unpin_message, Event, split_ready_into_waves,
     discover_dynamic_resources, merge_discovered,
     get_tz, panel_keyboard, format_quest_notification,
+    format_daily_reward_ready, format_daily_reminder,
 )
 from sfl_supabase import (
     get_all_active_users, get_user, load_state, save_state, update_user,
@@ -247,10 +249,23 @@ def scan_user(user: dict) -> "int | None":
     status_msg_id = state.get("status_msg_id")
     alerts_state  = state.get("ready_alerts", {})
 
+    # ── Daily Rewards — данные для статус-сообщения ───────────────────────────
+    _dr            = farm.get("dailyRewards") or {}
+    _dr_streaks    = _dr.get("streaks", 0)
+    _dr_collected_ms = (_dr.get("chest") or {}).get("collectedAt", 0)
+    _now_utc       = datetime.now(_utc_tz)
+    _today_utc_str = _now_utc.strftime("%Y-%m-%d")
+    _dr_collected_today = (
+        bool(_dr_collected_ms) and
+        datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz).strftime("%Y-%m-%d") == _today_utc_str
+    )
+    daily_info = {"streaks": _dr_streaks, "collected_today": _dr_collected_today}
+
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
     status_text = format_status_message(events, farm_id, tz=user_tz,
-                                        time_format=state.get("time_format", "both"))
+                                        time_format=state.get("time_format", "both"),
+                                        daily_info=daily_info)
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
@@ -308,6 +323,48 @@ def scan_user(user: dict) -> "int | None":
             log.info(f"[{username}] Новый Quest: {q_name}")
 
     state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])
+
+    # ── Daily Rewards ─────────────────────────────────────────────────────────
+    _utc_hour            = _now_utc.hour
+    _daily_notified_date = state.get("daily_notified_date", "")
+
+    # Первый скан нового UTC-дня → удаляем старое напоминание и шлём midnight-уведомление
+    if _today_utc_str != _daily_notified_date:
+        _old_mid = state.get("daily_reminder_msg_id", 0)
+        if _old_mid:
+            tg_delete(TG_TOKEN, telegram_id, _old_mid)
+            state["daily_reminder_msg_id"] = 0
+        text = format_daily_reward_ready(_dr_streaks, lang=_lang)
+        tg_send(TG_TOKEN, telegram_id, text, silent=True)
+        state["daily_notified_date"]           = _today_utc_str
+        state["daily_reminder_hours_sent"]     = []
+        state["daily_reminder_dismissed_date"] = ""
+        log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_streaks})")
+
+    # Награда собрана → удаляем напоминание если висит
+    if _dr_collected_today:
+        _old_mid = state.get("daily_reminder_msg_id", 0)
+        if _old_mid:
+            tg_delete(TG_TOKEN, telegram_id, _old_mid)
+            state["daily_reminder_msg_id"] = 0
+            log.info(f"[{username}] Daily Rewards: собрана, напоминание удалено")
+
+    # Ежечасные напоминания в 19-23 UTC если награда не собрана и не dismissed
+    elif 19 <= _utc_hour <= 23:
+        _dismissed_date = state.get("daily_reminder_dismissed_date", "")
+        _hours_sent     = state.get("daily_reminder_hours_sent", [])
+        if _today_utc_str != _dismissed_date and _utc_hour not in _hours_sent:
+            _hours_left = 24 - _utc_hour
+            text = format_daily_reminder(_dr_streaks, _hours_left, lang=_lang)
+            _old_mid = state.get("daily_reminder_msg_id", 0)
+            if _old_mid:
+                tg_delete(TG_TOKEN, telegram_id, _old_mid)
+            _dismiss_kb = {"inline_keyboard": [[{"text": "❌", "callback_data": "daily_dismiss"}]]}
+            _mid = tg_send(TG_TOKEN, telegram_id, text, reply_markup=_dismiss_kb)
+            _hours_sent.append(_utc_hour)
+            state["daily_reminder_hours_sent"] = _hours_sent
+            state["daily_reminder_msg_id"]     = _mid or 0
+            log.info(f"[{username}] Daily Rewards: напоминание {_utc_hour}:00 UTC (осталось {_hours_left}ч)")
 
     save_state(telegram_id, state)
     ready_cnt = sum(1 for e in events if e.ready_count > 0)
