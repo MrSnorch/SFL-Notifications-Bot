@@ -1076,12 +1076,32 @@ def format_status_message(events: list[Event], farm_id: str,
                 f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
                 f" — {time_str}"))
 
+        # ── Twitter Gift countdown (добавляем в pending до сортировки) ──────────
+        _tg_is_ready = False
+        if twitter_gift_info and twitter_gift_info.get("enabled"):
+            _tg_last_ts = twitter_gift_info.get("last_post_ts", 0)
+            if _tg_last_ts:
+                _tg_remaining_ms = int((604800 - (time.time() - _tg_last_ts)) * 1000)
+                if _tg_remaining_ms <= 0:
+                    _tg_is_ready = True
+                else:
+                    _tg_ready_at_ms = now_ms + _tg_remaining_ms
+                    display_items.append((_tg_ready_at_ms,
+                        f"🐦 Twitter Gift — {_fmt_ms_human(_tg_remaining_ms, lang)}"))
+
         for _, line in sorted(display_items, key=lambda x: x[0])[:20]:
             lines.append(line)
+    else:
+        _tg_is_ready = False
+        if twitter_gift_info and twitter_gift_info.get("enabled"):
+            _tg_last_ts = twitter_gift_info.get("last_post_ts", 0)
+            if _tg_last_ts:
+                _tg_remaining_ms = int((604800 - (time.time() - _tg_last_ts)) * 1000)
+                _tg_is_ready = _tg_remaining_ms <= 0
 
     ready_resources = [e for e in events if e.ready_count > 0 and e.resource_key != "skills"]
     ready_skills    = [e for e in events if e.ready_count > 0 and e.resource_key == "skills"]
-    if ready_resources:
+    if ready_resources or _tg_is_ready:
         lines.append(_i18n("ready_section", lang))
         for e in ready_resources:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
@@ -1091,20 +1111,12 @@ def format_status_message(events: list[Event], farm_id: str,
                 lines.append(f"  {e.emoji} {e.name}{cnt} (до {end_clock})")
             else:
                 lines.append(f"  {e.emoji} {e.name}{cnt}")
+        if _tg_is_ready:
+            lines.append(_i18n("twitter_gift_ready", lang))
     if ready_skills:
         lines.append(_i18n("ready_skills_section", lang))
         for e in ready_skills:
             lines.append(f"  {e.emoji} {e.name}")
-
-    # ── Twitter Gift countdown ────────────────────────────────────────────────
-    if twitter_gift_info and twitter_gift_info.get("enabled"):
-        _tg_last_ts = twitter_gift_info.get("last_post_ts", 0)
-        if _tg_last_ts:
-            _tg_remaining_ms = int((604800 - (time.time() - _tg_last_ts)) * 1000)
-            if _tg_remaining_ms <= 0:
-                lines.append(_i18n("twitter_gift_ready", lang))
-            else:
-                lines.append(f"🐦 Twitter Gift — {_fmt_ms_human(_tg_remaining_ms, lang)}")
 
     ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
     lines.append(_i18n("updated_at", lang, ts=ts))
