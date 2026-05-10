@@ -1038,6 +1038,59 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
                  cnt=cnt, extra=extra_label)
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ДАННЫЕ КВЕСТОВ (Pumpkin Pete Telegram quests)
+# Ключ — quest["name"] из API. Добавляй новые квесты сюда по мере появления.
+# ══════════════════════════════════════════════════════════════════════════════
+
+QUEST_DATA: dict[str, dict] = {
+    "goblin-dance-party": {
+        "title": "Goblin Dance Party",
+        "description": "The Goblins have set up a wild dance party in the fields. Strange music fills the air. Join them?",
+        "choices": [
+            ("Join them",  "15 Love Charms"),
+            ("Stay away",  "5 Stone"),
+        ],
+    },
+    "lost-scroll": {
+        "title": "Lost Scroll",
+        "description": "A mysterious scroll has appeared near the barn. The writing is ancient — someone has lost something important.",
+        "choices": [
+            ("Read it",    "10 Love Charms"),
+            ("Ignore it",  "5 Wood"),
+        ],
+    },
+    # Добавляй новые квесты ниже по тому же шаблону:
+    # "quest-name": {
+    #     "title": "...",
+    #     "description": "...",
+    #     "choices": [("Вариант 1", "Награда 1"), ("Вариант 2", "Награда 2")],
+    # },
+}
+
+
+def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
+    """Форматирует уведомление о новом квесте."""
+    data = QUEST_DATA.get(quest_name)
+
+    header = "🎁 <b>Новый квест</b>  <a href=\"https://t.me/pumpkin_pete_bot\">Pumpkin Pete</a>"
+
+    if not data:
+        # Квест неизвестен — показываем имя как есть
+        display_name = quest_name.replace("-", " ").title()
+        return f"{header}\n\n<b>{display_name}</b>"
+
+    lines = [header, "", f"<b>{data['title']}</b>", data["description"]]
+
+    if data.get("choices"):
+        rewards_label = {"ru": "Награды", "en": "Rewards", "uk": "Нагороди"}.get(lang, "Rewards")
+        lines.append(f"\n<b>{rewards_label}</b>")
+        for choice, reward in data["choices"]:
+            lines.append(f"{choice}: {reward}")
+
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TELEGRAM API HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
