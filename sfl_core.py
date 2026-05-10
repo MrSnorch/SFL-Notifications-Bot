@@ -357,7 +357,7 @@ TRACK_LABELS = [
     ("honey",      "🍯 Мёд"),
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
-    ("balloon",    "❤️ Шарик"),
+    ("balloon",    "❤️ Love Island"),
     ("quest",      "🎁 Quest"),
 ]
 
@@ -751,8 +751,8 @@ def scan_farm(farm: dict, track: dict,
             events.append(Event(skill_name, "⚡", ready_at_ms, 1, rc,
                 resource_key="skills"))
 
-    # ── BALLOON (Floating Island / Шарик) ────────────────────────────────────
-    # Шарик прилетает по расписанию (floatingIsland.schedule).
+    # ── BALLOON (Floating Island / Love Island) ─────────────────────────────
+    # Love Island прилетает по расписанию (floatingIsland.schedule).
     # Пропускаем если пользователь уже решил головоломку сегодня (petalPuzzleSolvedAt).
     if track.get("balloon", True):
         fi = farm.get("floatingIsland") or {}
@@ -778,7 +778,7 @@ def scan_farm(farm: dict, track: dict,
                     next_start, next_end = min(future, key=lambda x: x[0])
                     is_here = next_start <= now_ms
                     rc = 1 if is_here else 0
-                    events.append(Event("Шарик", "❤️", next_start, 1, rc,
+                    events.append(Event("Love Island", "❤️", next_start, 1, rc,
                         extra="",
                         last_ready_at_ms=next_end,
                         resource_key="balloon"))
@@ -880,9 +880,9 @@ _I18N = {
         "uk": "{emoji} <b>{name}{cnt}{extra} — готово до збору ✅</b>",
     },
     "balloon_arrived": {
-        "ru": "❤️ <b>Шарик прилетел!</b>{until}",
+        "ru": "❤️ <b>Love Island прилетел!</b>{until}",
         "en": "❤️ <b>Balloon arrived!</b>{until}",
-        "uk": "❤️ <b>Шарик прилетів!</b>{until}",
+        "uk": "❤️ <b>Love Island прилетів!</b>{until}",
     },
     "balloon_until": {
         "ru": " Улетает в {clock} (через {mins} мин)",
