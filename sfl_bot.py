@@ -208,6 +208,31 @@ STRINGS = {
         "en": "◀️ Back to settings",
         "uk": "◀️ Назад до налаштувань",
     },
+    "show_clock_btn": {
+        "ru": "⏱ Формат времени: {label}",
+        "en": "⏱ Time format: {label}",
+        "uk": "⏱ Формат часу: {label}",
+    },
+    "time_format_menu_title": {
+        "ru": "⏱ <b>Формат времени в статусе</b>\n\nКак показывать время до готовности:",
+        "en": "⏱ <b>Time format in status</b>\n\nHow to display time until ready:",
+        "uk": "⏱ <b>Формат часу у статусі</b>\n\nЯк показувати час до готовності:",
+    },
+    "time_format_both": {
+        "ru": "⏱ через 6м — 05:45",
+        "en": "⏱ in 6m — 05:45",
+        "uk": "⏱ через 6хв — 05:45",
+    },
+    "time_format_countdown": {
+        "ru": "⏱ через 6м",
+        "en": "⏱ in 6m",
+        "uk": "⏱ через 6хв",
+    },
+    "time_format_clock": {
+        "ru": "🕐 05:45",
+        "en": "🕐 05:45",
+        "uk": "🕐 05:45",
+    },
     "setfarm_btn_change": {
         "ru": "🏡 Изменить ферму: {farm_id}",
         "en": "🏡 Change farm: {farm_id}",
@@ -672,7 +697,8 @@ def repeat_resource_keyboard(lang: str, resource_key: str,
 
 
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                      repeat_count=3, repeat_interval_min=10, farm_id="?"):
+                      repeat_count=3, repeat_interval_min=10, farm_id="?",
+                      time_format="both"):
     """Inline-клавиатура для /settings."""
     buttons = []
     for key, label in TRACK_LABELS:
@@ -701,6 +727,11 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     buttons.append([{
         "text": t("setfarm_btn_change", lang, farm_id=farm_id),
         "callback_data": "setfarm_prompt",
+    }])
+    tf_label = t(f"time_format_{time_format}", lang)
+    buttons.append([{
+        "text": t("show_clock_btn", lang, label=tf_label),
+        "callback_data": "time_format_menu",
     }])
     buttons.append([{
         "text": t("settings_btn_save", lang),
@@ -790,7 +821,8 @@ def handle_settings(chat_id):
     send_service(chat_id, text,
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                         repeat_count, repeat_interval,
-                                        farm_id=user.get("farm_id", "?")))
+                                        farm_id=user.get("farm_id", "?"),
+                                        time_format=state.get("time_format", "both")))
 
 
 def handle_status(chat_id):
@@ -820,7 +852,8 @@ def handle_status(chat_id):
                 send_service(chat_id, t("status_new_resources", lang, labels=labels))
         events       = scan_farm(farm, tracking, dynamic_resources)
         user_tz      = get_tz(state.get("timezone"))
-        status_text  = format_status_message(events, user["farm_id"], tz=user_tz)
+        status_text  = format_status_message(events, user["farm_id"], tz=user_tz,
+                                             time_format=state.get("time_format", "both"))
         is_active    = user.get("active", True)
         kb           = panel_keyboard(lang, is_active)
         old_status_id = state.get("status_msg_id")
@@ -921,6 +954,7 @@ def handle_callback(callback_query):
     # ── Тоггл отслеживания ────────────────────────────────────────────────────
     if data.startswith("toggle:"):
         key = data.split(":", 1)[1]
+
         static_keys = {k for k, _ in TRACK_LABELS}
         if key in tracking or key in dynamic_keys or key in static_keys:
             tracking[key] = not tracking.get(key, False)
@@ -934,7 +968,8 @@ def handle_callback(callback_query):
                 t("settings_title", lang),
                 reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                                _repeat_count, _repeat_intv,
-                                               farm_id=user.get("farm_id", "?")),
+                                               farm_id=user.get("farm_id", "?"),
+                                               time_format=state.get("time_format", "both")),
             )
         else:
             answer_callback(cq_id, t("settings_unknown_resource", lang))
@@ -946,6 +981,35 @@ def handle_callback(callback_query):
             t("tz_title", lang, current_tz=tz_display_name(current_tz)),
             reply_markup=tz_keyboard(current_tz, lang),
         )
+
+    elif data == "time_format_menu":
+        answer_callback(cq_id)
+        current_tf = state.get("time_format", "both")
+        rows = []
+        for fmt in ("both", "countdown", "clock"):
+            check = "✅ " if fmt == current_tf else ""
+            rows.append([{"text": check + t(f"time_format_{fmt}", lang),
+                          "callback_data": f"set_time_format:{fmt}"}])
+        rows.append([{"text": t("settings_btn_back", lang), "callback_data": "settings:open"}])
+        edit_text(chat_id, msg_id, t("time_format_menu_title", lang),
+                  reply_markup={"inline_keyboard": rows})
+
+    elif data.startswith("set_time_format:"):
+        new_tf = data.split(":", 1)[1]
+        if new_tf in ("both", "countdown", "clock"):
+            state["time_format"] = new_tf
+            update_user(chat_id, state=state)
+            answer_callback(cq_id)
+            repeat = state.get("repeat", {})
+            edit_text(
+                chat_id, msg_id,
+                t("settings_title", lang),
+                reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
+                                               int(repeat.get("count", 1)),
+                                               int(repeat.get("interval_min", 10)),
+                                               farm_id=user.get("farm_id", "?"),
+                                               time_format=new_tf),
+            )
 
     elif data.startswith("set_tz:"):
         new_tz = data.split(":", 1)[1]
@@ -959,7 +1023,8 @@ def handle_callback(callback_query):
             reply_markup=settings_keyboard(tracking, dynamic_resources, new_tz, lang,
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
-                                           farm_id=user.get("farm_id", "?")),
+                                           farm_id=user.get("farm_id", "?"),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data.startswith("repeat_count:"):
@@ -1153,7 +1218,8 @@ def handle_callback(callback_query):
             reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
-                                           farm_id=user.get("farm_id", "?")),
+                                           farm_id=user.get("farm_id", "?"),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data == "settings:close":
@@ -1213,7 +1279,8 @@ def handle_callback(callback_query):
             reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
-                                           farm_id=user.get("farm_id", "?")),
+                                           farm_id=user.get("farm_id", "?"),
+                                           time_format=state.get("time_format", "both")),
         )
 
     # ── Кнопки панели управления (в закреплённом сообщении) ──────────────────
@@ -1227,7 +1294,8 @@ def handle_callback(callback_query):
             reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
-                                           farm_id=user.get("farm_id", "?")),
+                                           farm_id=user.get("farm_id", "?"),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data == "panel:lang":
@@ -1326,6 +1394,7 @@ def dispatch(update):
                             int(repeat.get("count", 1)),
                             int(repeat.get("interval_min", 10)),
                             farm_id=text,
+                            time_format=state.get("time_format", "both"),
                         ),
                     )
                 return

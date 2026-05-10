@@ -249,7 +249,8 @@ def scan_user(user: dict) -> "int | None":
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
-    status_text = format_status_message(events, farm_id, tz=user_tz)
+    status_text = format_status_message(events, farm_id, tz=user_tz,
+                                        time_format=state.get("time_format", "both"))
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
@@ -287,11 +288,7 @@ def scan_user(user: dict) -> "int | None":
     last_quest_notified = state.get("last_quest_notified", "")
 
     if q_name and not q_choices and q_start and q_start <= int(time.time() * 1000):
-        if not last_quest_notified:
-            # Холодный старт — запоминаем без уведомления
-            state["last_quest_notified"] = q_name
-            log.info(f"[{username}] Quest зафиксирован (холодный старт): {q_name}")
-        elif q_name != last_quest_notified:
+        if q_name != last_quest_notified:
             # Новый Quest стал доступен — шлём детальное сообщение
             text = format_quest_notification(q_name, lang=_lang)
             tg_send(TG_TOKEN, telegram_id, text)

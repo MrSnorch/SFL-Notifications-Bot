@@ -964,7 +964,9 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
 
 
 def format_status_message(events: list[Event], farm_id: str,
-                           tz=None, lang: str = "ru") -> str:
+                           tz=None, lang: str = "ru",
+                           time_format: str = "both") -> str:
+    # time_format: "both" = countdown + clock, "countdown" = countdown only, "clock" = clock only
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
     if not events:
@@ -997,18 +999,30 @@ def format_status_message(events: list[Event], farm_id: str,
                         ms_left = max(0, ready_ms - now_ms)
                         clock   = datetime.fromtimestamp(ready_ms / 1000, tz=_tz).strftime("%H:%M")
                         cnt_label = f" [{cnt}]"
+                        if time_format == "clock":
+                            time_str = clock
+                        elif time_format == "countdown":
+                            time_str = _fmt_ms_human(ms_left, lang)
+                        else:  # both
+                            time_str = f"{_fmt_ms_human(ms_left, lang)} — {clock}"
                         display_items.append((ready_ms,
                             f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
-                            f" — {_fmt_ms_human(ms_left, lang)} — {clock}"))
+                            f" — {time_str}"))
                     continue
 
             # Одна волна или нет ready_times — стандартная строка
             cnt_label = f" [{e.count - e.ready_count}]" if e.count > 1 else ""
             ms_left   = max(0, e.pending_at_ms - now_ms)
             clock     = e.fmt_pending_ready_time(_tz)
+            if time_format == "clock":
+                time_str = clock
+            elif time_format == "countdown":
+                time_str = _fmt_ms_human(ms_left, lang)
+            else:  # both
+                time_str = f"{_fmt_ms_human(ms_left, lang)} — {clock}"
             display_items.append((e.pending_at_ms,
                 f"{e.emoji} <b>{e.name}{cnt_label}{swarm_extra}</b>"
-                f" — {_fmt_ms_human(ms_left, lang)} — {clock}"))
+                f" — {time_str}"))
 
         for _, line in sorted(display_items, key=lambda x: x[0])[:20]:
             lines.append(line)
@@ -1502,6 +1516,13 @@ QUEST_DATA['victoria-s-command'] = QUEST_DATA['victorias-command']
 def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
     """Форматирует уведомление о новом Questе."""
     data = QUEST_DATA.get(quest_name)
+
+    # Фallback: API иногда шлёт имя без притяжательного 's'
+    # (напр. "bert-portal" вместо "berts-portal")
+    if not data:
+        parts = quest_name.split("-", 1)
+        if len(parts) == 2:
+            data = QUEST_DATA.get(parts[0] + "s-" + parts[1])
 
     header = "🎁 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot\">Pumpkin Pete</a>"
 
