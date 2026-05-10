@@ -285,14 +285,26 @@ def scan_user(user: dict) -> "int | None":
     q_name    = quest.get("name", "")
     q_choices = quest.get("choices", [])
     q_start   = quest.get("startAt", 0)
-    last_quest_notified = state.get("last_quest_notified", "")
+    last_quest_notified  = state.get("last_quest_notified", "")
+    last_quest_start_at  = state.get("last_quest_start_at", 0)
+    quest_msg_id         = state.get("quest_msg_id", 0)
+
+    # Если startAt изменился — игрок взял квест (или пришёл новый).
+    # Удаляем старое уведомление, если оно ещё не удалено вручную.
+    if quest_msg_id and q_start != last_quest_start_at:
+        tg_delete(TG_TOKEN, telegram_id, quest_msg_id)
+        state["quest_msg_id"] = 0
+        log.info(f"[{username}] Quest-уведомление удалено (startAt изменился)")
 
     if q_name and not q_choices and q_start and q_start <= int(time.time() * 1000):
         if q_name != last_quest_notified:
-            # Новый Quest стал доступен — шлём детальное сообщение
+            # Новый Quest стал доступен — шлём детальное сообщение с кнопкой ❌
             text = format_quest_notification(q_name, lang=_lang)
-            tg_send(TG_TOKEN, telegram_id, text)
+            dismiss_kb = {"inline_keyboard": [[{"text": "❌", "callback_data": "quest_dismiss"}]]}
+            mid = tg_send(TG_TOKEN, telegram_id, text, reply_markup=dismiss_kb)
             state["last_quest_notified"] = q_name
+            state["last_quest_start_at"] = q_start
+            state["quest_msg_id"]        = mid or 0
             log.info(f"[{username}] Новый Quest: {q_name}")
 
     state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])

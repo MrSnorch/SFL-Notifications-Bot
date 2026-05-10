@@ -1192,6 +1192,14 @@ def handle_callback(callback_query):
             reply_markup=repeat_resource_list_keyboard(tracking, dynamic_resources, state, lang),
         )
 
+    elif data == "quest_dismiss":
+        # Ручное закрытие уведомления о Questе кнопкой ❌
+        if state.get("quest_msg_id") == msg_id:
+            state["quest_msg_id"] = 0
+            update_user(chat_id, state=state)
+        delete_msg(chat_id, msg_id)
+        answer_callback(cq_id)
+
     elif data.startswith("dismiss:"):
         # Закрытие алерта о готовности кнопкой ❌
         alert_key = data[len("dismiss:"):]
