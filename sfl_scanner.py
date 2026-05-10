@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("SFL")
 
-from datetime import datetime, timezone as _tz_mod
+from datetime import datetime, timedelta, timezone as _tz_mod
 _utc_tz = _tz_mod.utc
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
@@ -260,7 +260,9 @@ def scan_user(user: dict) -> "int | None":
         bool(_dr_collected_ms) and
         datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz).strftime("%Y-%m-%d") == _today_utc_str
     )
-    daily_info = {"streaks": _dr_streaks, "collected_today": _dr_collected_today}
+    _tomorrow_utc  = (_now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
+    daily_info = {"streaks": _dr_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
@@ -335,12 +337,16 @@ def scan_user(user: dict) -> "int | None":
         if _old_mid:
             tg_delete(TG_TOKEN, telegram_id, _old_mid)
             state["daily_reminder_msg_id"] = 0
-        text = format_daily_reward_ready(_dr_streaks, lang=_lang)
-        tg_send(TG_TOKEN, telegram_id, text, silent=True)
+        # Шлём только если награда ещё не собрана — иначе просто фиксируем дату
+        if not _dr_collected_today:
+            text = format_daily_reward_ready(_dr_streaks, lang=_lang)
+            tg_send(TG_TOKEN, telegram_id, text, silent=True)
+            log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_streaks})")
+        else:
+            log.info(f"[{username}] Daily Rewards: новый день, но награда уже собрана — без уведомления")
         state["daily_notified_date"]           = _today_utc_str
         state["daily_reminder_hours_sent"]     = []
         state["daily_reminder_dismissed_date"] = ""
-        log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_streaks})")
 
     # Награда собрана → удаляем напоминание если висит
     if _dr_collected_today:
