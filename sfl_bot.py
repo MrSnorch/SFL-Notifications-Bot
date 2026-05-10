@@ -921,7 +921,8 @@ def handle_callback(callback_query):
     # ── Тоггл отслеживания ────────────────────────────────────────────────────
     if data.startswith("toggle:"):
         key = data.split(":", 1)[1]
-        if key in tracking or key in dynamic_keys:
+        static_keys = {k for k, _ in TRACK_LABELS}
+        if key in tracking or key in dynamic_keys or key in static_keys:
             tracking[key] = not tracking.get(key, False)
             update_user(chat_id, tracking=tracking)
             answer_callback(cq_id)

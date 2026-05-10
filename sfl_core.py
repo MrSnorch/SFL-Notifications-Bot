@@ -338,7 +338,7 @@ DEFAULT_TRACKING = {
     "gold": True, "crimstones": False, "oil": False, "salt": True,
     "sunstones": False, "fruits": True, "flowers": True,
     "honey": True, "mushrooms": False, "animals": False,
-    "balloon": False,
+    "balloon": True,
 }
 
 TRACK_LABELS = [
@@ -752,7 +752,7 @@ def scan_farm(farm: dict, track: dict,
     # ── BALLOON (Floating Island / Шарик) ────────────────────────────────────
     # Шарик прилетает по расписанию (floatingIsland.schedule).
     # Пропускаем если пользователь уже решил головоломку сегодня (petalPuzzleSolvedAt).
-    if track.get("balloon", False):
+    if track.get("balloon", True):
         fi = farm.get("floatingIsland") or {}
         if isinstance(fi, dict):
             petal_ts = fi.get("petalPuzzleSolvedAt", 0) or 0
