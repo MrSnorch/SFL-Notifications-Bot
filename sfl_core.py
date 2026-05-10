@@ -919,6 +919,16 @@ _I18N = {
         "en": "🎁 <b>Daily Reward [{streaks}] available to collect!</b>",
         "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
+    "twitter_posted_btn": {
+        "ru": "🐦 Я запостил в X",
+        "en": "🐦 I posted on X",
+        "uk": "🐦 Я запостив у X",
+    },
+    "twitter_posted_toast": {
+        "ru": "✅ Записано! Напомним через 7 дней.",
+        "en": "✅ Saved! We'll remind you in 7 days.",
+        "uk": "✅ Збережено! Нагадаємо через 7 днів.",
+    },
     "twitter_gift_ready": {
         "ru": "🐦 <b>Twitter Gift доступен!</b>\n\nПоделись прогрессом в X (Twitter), чтобы получить награду.",
         "en": "🐦 <b>Twitter Gift available!</b>\n\nShare your progress on X (Twitter) to claim your reward.",
@@ -1660,7 +1670,7 @@ def tg_send(token: str, chat_id: int, text: str,
         log.warning(f"tg_send error: {e}")
     return None
 
-def panel_keyboard(lang: str, is_active: bool) -> dict:
+def panel_keyboard(lang: str, is_active: bool, x_username: str = "") -> dict:
     """Inline-клавиатура «живого пульта» для закреплённого статус-сообщения."""
     labels = {
         "settings": {"ru": "⚙️ Настройки",  "en": "⚙️ Settings",  "uk": "⚙️ Налаштування"},
@@ -1674,11 +1684,14 @@ def panel_keyboard(lang: str, is_active: bool) -> dict:
         if is_active else
         {"text": L("resume"), "callback_data": "panel:resume"}
     )
-    return {"inline_keyboard": [
+    rows = [
         [{"text": L("settings"), "callback_data": "panel:settings"}],
         [toggle],
         [{"text": L("lang"),     "callback_data": "panel:lang"}],
-    ]}
+    ]
+    if x_username:
+        rows.append([{"text": _i18n("twitter_posted_btn", lang), "callback_data": "panel:twitter_posted"}])
+    return {"inline_keyboard": rows}
 
 
 def tg_edit(token: str, chat_id: int, message_id: int, text: str,
