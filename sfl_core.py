@@ -338,6 +338,7 @@ DEFAULT_TRACKING = {
     "gold": True, "crimstones": False, "oil": False, "salt": True,
     "sunstones": False, "fruits": True, "flowers": True,
     "honey": True, "mushrooms": False, "animals": False,
+    "balloon": False,
 }
 
 TRACK_LABELS = [
@@ -355,6 +356,7 @@ TRACK_LABELS = [
     ("honey",      "🍯 Мёд"),
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
+    ("balloon",    "❤️ Шарик"),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -747,6 +749,37 @@ def scan_farm(farm: dict, track: dict,
             events.append(Event(skill_name, "⚡", ready_at_ms, 1, rc,
                 resource_key="skills"))
 
+    # ── BALLOON (Floating Island / Шарик) ────────────────────────────────────
+    # Шарик прилетает по расписанию (floatingIsland.schedule).
+    # Пропускаем если пользователь уже решил головоломку сегодня (petalPuzzleSolvedAt).
+    if track.get("balloon", False):
+        fi = farm.get("floatingIsland") or {}
+        if isinstance(fi, dict):
+            petal_ts = fi.get("petalPuzzleSolvedAt", 0) or 0
+            petal_ts = _fix_ts(petal_ts)
+            solved_today = False
+            if petal_ts:
+                solved_dt = datetime.fromtimestamp(petal_ts / 1000, tz=UA_TZ).date()
+                today_dt  = datetime.now(tz=UA_TZ).date()
+                solved_today = (solved_dt == today_dt)
+
+            if not solved_today:
+                schedule = [s for s in fi.get("schedule", [])
+                            if isinstance(s, dict)
+                            and isinstance(s.get("startAt"), (int, float))
+                            and isinstance(s.get("endAt"),   (int, float))]
+                # Берём только окна которые ещё не закончились
+                future = [(int(s["startAt"]), int(s["endAt"]))
+                          for s in schedule if s["endAt"] > now_ms]
+                if future:
+                    next_start, next_end = min(future, key=lambda x: x[0])
+                    is_here = next_start <= now_ms
+                    rc = 1 if is_here else 0
+                    events.append(Event("Шарик", "❤️", next_start, 1, rc,
+                        extra="",
+                        last_ready_at_ms=next_end,
+                        resource_key="balloon"))
+
     # ── ДИНАМИЧЕСКИЕ РЕСУРСЫ (автодетект) ────────────────────────────────────
     for dr in (dynamic_resources or []):
         key = dr["key"]
@@ -827,6 +860,16 @@ _I18N = {
         "ru": "{emoji} <b>{name}{cnt}{extra} — готово к сбору ✅</b>",
         "en": "{emoji} <b>{name}{cnt}{extra} — ready to harvest ✅</b>",
         "uk": "{emoji} <b>{name}{cnt}{extra} — готово до збору ✅</b>",
+    },
+    "balloon_arrived": {
+        "ru": "❤️ <b>Шарик прилетел!</b>{until}",
+        "en": "❤️ <b>Balloon arrived!</b>{until}",
+        "uk": "❤️ <b>Шарик прилетів!</b>{until}",
+    },
+    "balloon_until": {
+        "ru": " Улетает в {clock} (через {mins} мин)",
+        "en": " Leaves at {clock} (in {mins} min)",
+        "uk": " Відлітає о {clock} (через {mins} хв)",
     },
 }
 
@@ -953,7 +996,12 @@ def format_status_message(events: list[Event], farm_id: str,
         lines.append(_i18n("ready_section", lang))
         for e in ready_resources:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
-            lines.append(f"  {e.emoji} {e.name}{cnt}")
+            if e.resource_key == "balloon" and e.last_ready_at_ms:
+                end_clock = datetime.fromtimestamp(
+                    e.last_ready_at_ms / 1000, tz=_tz).strftime("%H:%M")
+                lines.append(f"  {e.emoji} {e.name}{cnt} (до {end_clock})")
+            else:
+                lines.append(f"  {e.emoji} {e.name}{cnt}")
     if ready_skills:
         lines.append(_i18n("ready_skills_section", lang))
         for e in ready_skills:
@@ -976,6 +1024,13 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
     cnt = f" [{effective_ready}/{e.count}]" if e.count > 1 else ""
     if getattr(e, "resource_key", "") == "skills":
         return _i18n("skill_ready_alert", lang, emoji=e.emoji, name=e.name)
+    if getattr(e, "resource_key", "") == "balloon":
+        until = ""
+        if e.last_ready_at_ms and e.last_ready_at_ms > now_ms:
+            mins_left = max(1, int((e.last_ready_at_ms - now_ms) / 60_000))
+            clock = datetime.fromtimestamp(e.last_ready_at_ms / 1000, tz=UA_TZ).strftime("%H:%M")
+            until = _i18n("balloon_until", lang, clock=clock, mins=mins_left)
+        return _i18n("balloon_arrived", lang, until=until)
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
     return _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
