@@ -525,7 +525,7 @@ STRINGS = {
             "Примеры:\n"
             "<code>07.05.2026 04:07</code>\n"
             "<code>2026-05-07 04:07</code>\n\n"
-            "Время вводится в <b>UTC</b>."
+            "Время вводится в твоём часовом поясе ({tz})."
         ),
         "en": (
             "📅 <b>Last tweet date and time</b>\n\n"
@@ -534,7 +534,7 @@ STRINGS = {
             "Examples:\n"
             "<code>07.05.2026 04:07</code>\n"
             "<code>2026-05-07 04:07</code>\n\n"
-            "Time is in <b>UTC</b>."
+            "Time is in your timezone ({tz})."
         ),
         "uk": (
             "📅 <b>Дата і час останнього твіту</b>\n\n"
@@ -543,7 +543,7 @@ STRINGS = {
             "Приклади:\n"
             "<code>07.05.2026 04:07</code>\n"
             "<code>2026-05-07 04:07</code>\n\n"
-            "Час вказується в <b>UTC</b>."
+            "Час вказується у твоєму часовому поясі ({tz})."
         ),
     },
     "twitter_gift_set_time_invalid": {
@@ -872,9 +872,9 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
 TWITTER_GIFT_PERIOD = 168 * 3600  # 7 days in seconds
 
 
-def _parse_tweet_datetime(text: str):
-    """Parse user-entered date/time string, return UTC unix timestamp or None."""
-    from datetime import datetime as _dt, timezone as _tz
+def _parse_tweet_datetime(text: str, user_tz=None):
+    """Parse user-entered date/time string in user's local timezone, return UTC unix timestamp or None."""
+    from datetime import datetime as _dt, timezone as _utc
     text = text.strip()
     formats = [
         "%d.%m.%Y %H:%M",
@@ -883,10 +883,11 @@ def _parse_tweet_datetime(text: str):
         "%Y-%m-%dT%H:%M",
         "%d/%m/%Y %H:%M",
     ]
+    tz = user_tz or _utc
     for fmt in formats:
         try:
             dt = _dt.strptime(text, fmt)
-            return int(dt.replace(tzinfo=_tz.utc).timestamp())
+            return int(dt.replace(tzinfo=tz).timestamp())
         except ValueError:
             pass
     return None
@@ -906,10 +907,10 @@ def _fmt_twitter_countdown(seconds_left: int, lang: str) -> str:
         return f"{m}m"
 
 
-def _twitter_gift_status_text(tg_state: dict, lang: str) -> str:
+def _twitter_gift_status_text(tg_state: dict, lang: str, user_tz=None) -> str:
     """Return status string for Twitter Gift menu."""
     import time as _time
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt, timezone as _utc
     enabled = tg_state.get("enabled", False)
     last_ts = tg_state.get("last_post_ts", 0)
     if not enabled:
@@ -920,7 +921,9 @@ def _twitter_gift_status_text(tg_state: dict, lang: str) -> str:
     remaining = TWITTER_GIFT_PERIOD - elapsed
     if remaining <= 0:
         return t("twitter_gift_status_ready", lang)
-    last_dt = _dt.fromtimestamp(last_ts, tz=_tz.utc).strftime("%d.%m.%Y %H:%M UTC")
+    display_tz = user_tz or _utc
+    tz_label = display_tz.tzname(None) if hasattr(display_tz, "tzname") else "UTC"
+    last_dt = _dt.fromtimestamp(last_ts, tz=display_tz).strftime(f"%d.%m.%Y %H:%M {tz_label}")
     return t("twitter_gift_status_countdown", lang,
              countdown=_fmt_twitter_countdown(remaining, lang),
              last_post=last_dt)
@@ -1172,6 +1175,7 @@ def handle_callback(callback_query):
     dynamic_resources = state.get("discovered_resources", [])
     dynamic_keys      = {d["key"] for d in dynamic_resources}
     current_tz        = state.get("timezone")
+    user_tz           = get_tz(current_tz)
 
     # ── Смена языка ────────────────────────────────────────────────────────────
     if data.startswith("set_lang:"):
@@ -1483,6 +1487,8 @@ def handle_callback(callback_query):
         answer_callback(cq_id, t("settings_saved", lang))
         # Если закрываем настройки из панели — возвращаем панель
         if msg_id == state.get("status_msg_id"):
+            state["panel_locked"] = 0
+            update_user(chat_id, state=state)
             user = get_user(chat_id)
             last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
             edit_text(chat_id, msg_id, last_text,
@@ -1544,6 +1550,8 @@ def handle_callback(callback_query):
 
     elif data == "panel:settings":
         answer_callback(cq_id)
+        state["panel_locked"] = int(time.time())
+        update_user(chat_id, state=state)
         repeat = state.get("repeat", {})
         edit_text(
             chat_id, msg_id,
@@ -1557,6 +1565,8 @@ def handle_callback(callback_query):
 
     elif data == "panel:lang":
         answer_callback(cq_id)
+        state["panel_locked"] = int(time.time())
+        update_user(chat_id, state=state)
         flag, name = SUPPORTED_LANGS[lang]
         edit_text(
             chat_id, msg_id,
@@ -1566,18 +1576,24 @@ def handle_callback(callback_query):
 
     elif data == "panel:stop":
         update_user(chat_id, active=False)
+        state["panel_locked"] = 0
+        update_user(chat_id, state=state)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "⏸")
         edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
 
     elif data == "panel:resume":
         update_user(chat_id, active=True)
+        state["panel_locked"] = 0
+        update_user(chat_id, state=state)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "▶️")
         edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
 
     elif data == "panel:close":
         answer_callback(cq_id)
+        state["panel_locked"] = 0
+        update_user(chat_id, state=state)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
         edit_text(chat_id, msg_id, last_text,
@@ -1588,7 +1604,7 @@ def handle_callback(callback_query):
     elif data == "twitter_gift:open":
         answer_callback(cq_id)
         tg_state = state.get("twitter_gift") or {}
-        status   = _twitter_gift_status_text(tg_state, lang)
+        status   = _twitter_gift_status_text(tg_state, lang, user_tz)
         edit_text(
             chat_id, msg_id,
             t("twitter_gift_title", lang, status=status),
@@ -1607,7 +1623,7 @@ def handle_callback(callback_query):
             t("twitter_gift_disabled_toast", lang)
         )
         answer_callback(cq_id, toast)
-        status = _twitter_gift_status_text(tg_state, lang)
+        status = _twitter_gift_status_text(tg_state, lang, user_tz)
         edit_text(
             chat_id, msg_id,
             t("twitter_gift_title", lang, status=status),
@@ -1623,7 +1639,7 @@ def handle_callback(callback_query):
         state["twitter_gift"] = tg_state
         update_user(chat_id, state=state)
         answer_callback(cq_id, t("twitter_gift_done_toast", lang))
-        status = _twitter_gift_status_text(tg_state, lang)
+        status = _twitter_gift_status_text(tg_state, lang, user_tz)
         edit_text(
             chat_id, msg_id,
             t("twitter_gift_title", lang, status=status),
@@ -1635,9 +1651,10 @@ def handle_callback(callback_query):
         state["awaiting"]     = "twitter_post_time"
         state["awaiting_msg_id"] = msg_id
         update_user(chat_id, state=state)
+        tz_label = tz_display_name(current_tz)
         edit_text(
             chat_id, msg_id,
-            t("twitter_gift_set_time_prompt", lang),
+            t("twitter_gift_set_time_prompt", lang, tz=tz_label),
             reply_markup={"inline_keyboard": [[{
                 "text": t("twitter_gift_btn_cancel", lang),
                 "callback_data": "twitter_gift:cancel_set",
@@ -1650,7 +1667,7 @@ def handle_callback(callback_query):
         state.pop("awaiting_msg_id", None)
         update_user(chat_id, state=state)
         tg_state = state.get("twitter_gift") or {}
-        status   = _twitter_gift_status_text(tg_state, lang)
+        status   = _twitter_gift_status_text(tg_state, lang, user_tz)
         edit_text(
             chat_id, msg_id,
             t("twitter_gift_title", lang, status=status),
@@ -1736,7 +1753,8 @@ def dispatch(update):
                 lang          = get_lang(user)
                 prompt_msg_id = state.get("awaiting_msg_id")
                 delete_msg(chat_id, message_id)
-                ts = _parse_tweet_datetime(text)
+                _user_tz = get_tz(state.get("timezone"))
+                ts = _parse_tweet_datetime(text, _user_tz)
                 if ts is None:
                     if prompt_msg_id:
                         edit_text(
@@ -1758,7 +1776,7 @@ def dispatch(update):
                 state.pop("awaiting", None)
                 state.pop("awaiting_msg_id", None)
                 update_user(chat_id, state=state)
-                status = _twitter_gift_status_text(tg_state, lang)
+                status = _twitter_gift_status_text(tg_state, lang, _user_tz)
                 if prompt_msg_id:
                     edit_text(
                         chat_id, prompt_msg_id,

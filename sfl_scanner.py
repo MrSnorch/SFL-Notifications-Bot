@@ -305,16 +305,29 @@ def scan_user(user: dict) -> "int | None":
                                         twitter_gift_info=twitter_gift_info)
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
-    new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
-                                              reply_markup=panel_keyboard(_lang, _is_active))
-    state["status_msg_id"] = new_msg_id
 
-    # Закрепляем если появилось новое сообщение (старое не удалось отредактировать)
-    if is_new and new_msg_id:
-        if status_msg_id and status_msg_id != new_msg_id:
-            tg_unpin_message(TG_TOKEN, telegram_id, status_msg_id)
-        ok = tg_pin_message(TG_TOKEN, telegram_id, new_msg_id)
-        log.info(f"[{username}] {'📌 Закреплено' if ok else '⚠️ Не удалось закрепить'} статус-сообщение {new_msg_id}")
+    # Если юзер сейчас в меню настроек — не перезаписываем закреп.
+    # panel_locked = timestamp входа; таймаут 30 минут на случай если юзер
+    # просто закрыл приложение не выйдя из настроек.
+    _panel_locked_at = state.get("panel_locked", 0)
+    _panel_is_open   = bool(_panel_locked_at) and (time.time() - _panel_locked_at < 1800)
+    if _panel_is_open:
+        log.info(f"[{username}] ⏸ Настройки открыты — закреп не редактируется")
+        state["last_status_text"] = status_text  # сохраняем актуальный текст
+    else:
+        if _panel_locked_at and not _panel_is_open:
+            # Таймаут 30 минут истёк — автоматически снимаем блокировку
+            state["panel_locked"] = 0
+        new_msg_id, is_new = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
+                                               reply_markup=panel_keyboard(_lang, _is_active))
+        state["status_msg_id"] = new_msg_id
+
+        # Закрепляем если появилось новое сообщение (старое не удалось отредактировать)
+        if is_new and new_msg_id:
+            if status_msg_id and status_msg_id != new_msg_id:
+                tg_unpin_message(TG_TOKEN, telegram_id, status_msg_id)
+            ok = tg_pin_message(TG_TOKEN, telegram_id, new_msg_id)
+            log.info(f"[{username}] {'📌 Закреплено' if ok else '⚠️ Не удалось закрепить'} статус-сообщение {new_msg_id}")
 
     # ── Алерты о готовности (пингуют) ────────────────────────────────────────
     repeat          = state.get("repeat", {})
