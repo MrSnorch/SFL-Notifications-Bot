@@ -1067,29 +1067,436 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
 # ══════════════════════════════════════════════════════════════════════════════
 
 QUEST_DATA: dict[str, dict] = {
+    "ancient-totem": {
+        "title": "Ancient Totem",
+        "description": "While digging, you unearth a strange humming totem covered in runes. What will you do?",
+        "choices": [
+            ("✋ Touch it",      "100 Coins 🪙"),
+            ("🙈 Bury it again", "5 Stone 🪨"),
+        ],
+    },
+    "bards-visit": {
+        "title": "Bard's Visit",
+        "description": "A traveling bard plays a lively tune and asks for a small gift to bless your harvest. How will you respond?",
+        "choices": [
+            ("🎵 Give him mushrooms", "5 Wild Mushrooms 🍄 + 50 Coins 🪙"),
+            ("🤐 Ignore him",         "50 Coins 🪙"),
+        ],
+    },
+    "beach-banter": {
+        "title": "Beach Banter",
+        "description": "Petro and Corale are arguing over a washed-up relic. Help settle the dispute?",
+        "choices": [
+            ("🗺️ Decode the vase's map", "5 Kale Seed 🥬"),
+            ("🌊 Let the waves claim it", "50 Coins 🪙"),
+            ("🚶 Ignore it",              "3 White Pansy 🤍"),
+        ],
+    },
+    "berts-portal": {
+        "title": "Bert's Portal",
+        "description": "Bert says a mushroom ring is a portal to another land. Try jumping in?",
+        "choices": [
+            ("🧙‍♂️ Step into the ring", "5 Gold 🪙"),
+            ("🧿 Back away slowly",    "50 Coins 🪙"),
+            ("🚶 Ignore it",           "3 Red Pansy 🌺"),
+        ],
+    },
+    "chase-the-rainbow": {
+        "title": "Chase the Rainbow",
+        "description": "A dazzling rainbow arcs across Sunflower Land. It's said treasures lie at its base. Will you chase it?",
+        "choices": [
+            ("🏃 Chase it!",      "10 Gems 💎"),
+            ("🧑‍🌾 Ignore it", "50 Coins 🪙"),
+        ],
+    },
+    "chicken-race": {
+        "title": "Chicken Race",
+        "description": "A cheeky chicken challenges you to a race around the farm. Villagers are watching!",
+        "choices": [
+            ("🏃‍♂️ Race the chicken", "5 Axes 🪓 + 50 Coins 🪙"),
+            ("🐥 Let it strut",        "5 Kale 🥬"),
+        ],
+    },
+    "cornwells-curiosity": {
+        "title": "Cornwell's Curiosity",
+        "description": "What is Cornwell's profession in Sunflower Land?",
+        "choices": [
+            ("📖 Librarian ✅",  "100 Coins 🪙 + 5 Gems 💎"),
+            ("⚒️ Blacksmith ❌", "No prize"),
+            ("🧙 Wizard ❌",     "No prize"),
+        ],
+    },
+    "cornwells-riddle": {
+        "title": "Cornwell's Riddle",
+        "description": "Cornwell challenges you with a cryptic riddle tied to a hidden stash. Try to solve it?",
+        "choices": [
+            ("👨‍🌾 Investigate the answer", "10 Kale 🥬"),
+            ("📘 Close the riddle book",    "50 Coins 🪙"),
+            ("🚶 Ignore it",                "150 Coins 🪙"),
+        ],
+    },
+    "desert-rune": {
+        "title": "Desert Rune",
+        "description": "A glowing rune was found in the desert. Touch it or report it?",
+        "choices": [
+            ("🔥 Touch the glowing rune",  "10 Corn 🌽"),
+            ("🧘 Leave it undisturbed",    "50 Coins 🪙"),
+            ("🚶 Ignore it",               "50 Coins 🪙"),
+        ],
+    },
+    "finleys-fish": {
+        "title": "Finley's Fish",
+        "description": "Finley saw a huge shadow in the ocean. Try to catch it?",
+        "choices": [
+            ("🎣 Cast Finley's rod",     "5 Stone 🪨"),
+            ("🐚 Sit by the shore",      "50 Coins 🪙"),
+            ("🚶 Ignore it",             "3 Purple Pansy 🟣"),
+        ],
+    },
+    "fox-theft": {
+        "title": "Fox Theft",
+        "description": "A fox is spotted stealing berries from your farm. Quick thinking might save your harvest!",
+        "choices": [
+            ("🦊 Shoo it away", "5 Mushrooms 🍄"),
+            ("🥬 Let it go",    "5 Kale 🥬"),
+        ],
+    },
+    "gambits-bet": {
+        "title": "Gambit's Bet",
+        "description": "Gambit offers a risky game with high rewards. Do you play?",
+        "choices": [
+            ("🕵️ Start the scavenger hunt", "5 Wheat Seed 🌾"),
+            ("🎭 Decline the risky bet",     "50 Coins 🪙"),
+            ("🚶 Ignore it",                 "50 Coins 🪙"),
+        ],
+    },
+    "ghostly-harvest": {
+        "title": "Ghostly Harvest",
+        "description": "Strange crops have sprouted overnight, glowing under the moonlight. Investigate?",
+        "choices": [
+            ("🧩 Decode the crop symbol",   "10 Pumpkin 🎃"),
+            ("🌑 Step away from the glow",  "50 Coins 🪙"),
+            ("🚶 Ignore it",                "5 Iron ⛓️"),
+        ],
+    },
     "goblin-dance-party": {
         "title": "Goblin Dance Party",
         "description": "The Goblins have set up a wild dance party in the fields. Strange music fills the air. Join them?",
         "choices": [
-            ("Join them",  "15 Love Charms"),
-            ("Stay away",  "5 Stone"),
+            ("💃 Join them",   "15 Love Charms 💝"),
+            ("🕺 Stay away",   "5 Stone 🪨"),
+        ],
+    },
+    "goblin-scheme": {
+        "title": "Goblin Scheme",
+        "description": "A shady goblin whispers about a shortcut to wealth. Trust him?",
+        "choices": [
+            ("💰 Enter the mountain lair",  "5 Corn Seed 🌽"),
+            ("🚫 Ignore the goblin's tip",  "50 Coins 🪙"),
+            ("🚶 Ignore it",                "5 Wood 🪵"),
+        ],
+    },
+    "goblin-trade": {
+        "title": "Goblin Trade",
+        "description": "A sneaky Goblin jingles a bag of shiny stones, offering a suspicious trade for your crops. Will you trust him?",
+        "choices": [
+            ("🤝 Accept trade", "5 Pickaxe ⛏️"),
+            ("🚶 Refuse",       "50 Coins 🪙"),
+        ],
+    },
+    "goblin-upgrade": {
+        "title": "Goblin Upgrade",
+        "description": "A shady Goblin offers to \"upgrade\" your tools. His grin is unsettling. Trust him?",
+        "choices": [
+            ("🛠️ Agree",  "5 Rods 🎣 + 5 Pickaxes ⛏️"),
+            ("❌ Decline", "50 Coins 🪙"),
+        ],
+    },
+    "golden-fish": {
+        "title": "Golden Fish",
+        "description": "A Golden Fish is flopping by the river. Legends say catching it brings great fortune. Will you take the risk?",
+        "choices": [
+            ("🐠 Catch it!", "15 Gems 💎"),
+            ("🦈 Let it go", "50 Coins 🪙"),
+        ],
+    },
+    "grimblys-feast": {
+        "title": "Grimbly's Feast",
+        "description": "Grimbly is preparing a Goblin feast but needs one last ingredient. Help him?",
+        "choices": [
+            ("🍄 Search behind the falls", "7 Gems 💎"),
+            ("🥣 Refuse the recipe",       "50 Coins 🪙"),
+            ("🚶 Ignore it",               "100 Coins 🪙"),
+        ],
+    },
+    "help-old-cornwell": {
+        "title": "Help Old Cornwell",
+        "description": "Wise Old Cornwell waves you over, arms full of freshly picked Kale. He looks exhausted and could use a hand. Will you help?",
+        "choices": [
+            ("🧑‍🌾 Help him", "5 Kale 🥬 + 10 Love Charms 💘"),
+            ("🙈 Ignore him",  "50 Coins 🪙"),
+        ],
+    },
+    "jesters-prank": {
+        "title": "Jester's Prank",
+        "description": "The Jester plans to swap Victoria's crown with a fake during the royal procession. He offers you a reward if you help. Will you participate?",
+        "choices": [
+            ("👑 Swap the crown!", "10 Pumpkin 🎃"),
+            ("⚖️ Warn the queen",  "50 Coins 🪙"),
+            ("🚶 Ignore it",       "5 Gold 🪙"),
+        ],
+    },
+    "lost-pirate-map": {
+        "title": "Lost Pirate Map",
+        "description": "You stumble upon a torn pirate map buried in the sand. Will you follow it?",
+        "choices": [
+            ("🗺️ Follow it", "10 Gems 💎"),
+            ("🚶 Ignore it", "50 Coins 🪙"),
         ],
     },
     "lost-scroll": {
         "title": "Lost Scroll",
-        "description": "A mysterious scroll has appeared near the barn. The writing is ancient — someone has lost something important.",
+        "description": "Cornwell misplaced a scroll that could reveal ancient truths. Help find it?",
         "choices": [
-            ("Read it",    "10 Love Charms"),
-            ("Ignore it",  "5 Wood"),
+            ("🛠️ Enter the hidden room", "5 Celestine Seed 🌱"),
+            ("📚 Leave the library",      "50 Coins 🪙"),
+            ("🚶 Ignore it",              "3 Red Pansy 🌺"),
+        ],
+    },
+    "magic-storm": {
+        "title": "Magic Storm",
+        "description": "A vibrant magic storm rolls across Sunflower Land. Will you brave it?",
+        "choices": [
+            ("🌫️ Dance in the storm", "10 Axes 🪓"),
+            ("🏠 Hide inside",         "5 Wood 🪵"),
+        ],
+    },
+    "merchants-mystery-box": {
+        "title": "Merchant's Mystery Box",
+        "description": "A wandering merchant offers you a sealed mystery box. He promises great rewards inside. Will you buy it?",
+        "choices": [
+            ("🎁 Buy the box", "5 Axes 🪓"),
+            ("🚫 Decline",     "50 Coins 🪙"),
+            ("🚶 Ignore it",   "5 Wood 🪵"),
+        ],
+    },
+    "mirandas-song": {
+        "title": "Miranda's Song",
+        "description": "Miranda found a seashell that sings. Listen to it?",
+        "choices": [
+            ("🎵 Follow the music trail", "5 Carrot Seed 🥕"),
+            ("🙉 Ignore the melody",      "50 Coins 🪙"),
+            ("🚶 Ignore it",              "50 Coins 🪙"),
+        ],
+    },
+    "moonlight-crops": {
+        "title": "Moonlight Crops",
+        "description": "Your crops glisten under the full moon. Old tales say moon-harvests bring unusual yields. What will you do?",
+        "choices": [
+            ("🌾 Harvest them",      "5 Kale 🥬 + 10 Wood 🪵"),
+            ("🐑 Wait till morning", "50 Coins 🪙"),
+        ],
+    },
+    "mushroom-circle": {
+        "title": "Mushroom Circle",
+        "description": "Overnight, a glowing circle of mushrooms has formed near your farm. Strange energies hum in the air. Dare to step inside?",
+        "choices": [
+            ("🌀 Step inside",      "3 Wild Mushrooms 🍄"),
+            ("🛡️ Walk around it", "5 Wood 🪵"),
+        ],
+    },
+    "mysterious-merchant": {
+        "title": "Mysterious Merchant",
+        "description": "A cloaked figure appears at the edge of your farm, offering rare goods for an unusual price...",
+        "choices": [
+            ("📦 Select the glowing package", "3 Kale Seeds 🥬"),
+            ("🎁 Choose the wooden box",      "100 Coins 🪙 + 2 Wood 🪵"),
+            ("🚶 Ignore it",                  "5 Wood 🪵"),
+        ],
+    },
+    "mystic-well": {
+        "title": "Mystic Well",
+        "description": "A bubbling well behind the plaza is glowing. Drop something in?",
+        "choices": [
+            ("💎 Drop your treasured item", "5 Stone 🪨"),
+            ("🌑 Keep your belongings",     "50 Coins 🪙"),
+            ("🚶 Ignore it",                "50 Coins 🪙"),
+        ],
+    },
+    "petes-fishing-challenge": {
+        "title": "Pete's Fishing Challenge",
+        "description": "Pete boasts about his fishing skills by the lake. He challenges you to a contest. Accept?",
+        "choices": [
+            ("🎣 Compete!",      "5 Rods 🎣"),
+            ("🧑‍🌾 Decline", "50 Coins 🪙"),
+        ],
+    },
+    "petes-parade": {
+        "title": "Pete's Parade",
+        "description": "The plaza is setting up a parade, but Pete's float is broken! Help him fix it?",
+        "choices": [
+            ("🔍 Scour the dusty barn",     "5 Rods 🎣"),
+            ("🚫 Leave the float unfinished", "50 Coins 🪙"),
+            ("🚶 Ignore it",                 "3 Yellow Pansy 🌼"),
+        ],
+    },
+    "plaza-whispers": {
+        "title": "Plaza Whispers",
+        "description": "Betty says the plaza is whispering secrets at night. Investigate the sound?",
+        "choices": [
+            ("🛠️ Uncover the fountain's secret", "10 Beetroot 🥬"),
+            ("🌃 Walk into the night",            "50 Coins 🪙"),
+            ("🚶 Ignore it",                      "5 Egg 🥚"),
+        ],
+    },
+    "ravens-secret": {
+        "title": "Raven's Secret",
+        "description": "Who is Raven secretly related to?",
+        "choices": [
+            ("⚒️ The Blacksmith ✅", "100 Coins 🪙 + 5 Gems 💎"),
+            ("🧝 A Moonseeker ❌",   "5 Love Charms 💘"),
+            ("👸 Queen Victoria ❌", "5 Love Charms 💘"),
+        ],
+    },
+    "ravens-vision": {
+        "title": "Raven's Vision",
+        "description": "Raven speaks of a vision involving a rare flower and a lunar event. Search for it?",
+        "choices": [
+            ("🌕 Wait beneath the moonlight", "8 Gems 💎"),
+            ("🏳️ Skip the lunar ritual",    "50 Coins 🪙"),
+            ("🚶 Ignore it",                  "3 Red Pansy 🌺"),
+        ],
+    },
+    "sunken-bottle": {
+        "title": "Sunken Bottle",
+        "description": "A mysterious bottle washed ashore. It holds an old, crumpled note. Open it?",
+        "choices": [
+            ("🧭 Search the marked shoreline", "5 Iron Pickaxe ⛏️"),
+            ("📄 Crumple the soggy note",      "50 Coins 🪙"),
+            ("🚶 Ignore it",                   "100 Coins 🪙"),
+        ],
+    },
+    "timmys-trouble": {
+        "title": "Timmy's Trouble",
+        "description": "Timmy swears he saw a Goblin stealing honey. Investigate the scene?",
+        "choices": [
+            ("🐾 Follow the sticky trail", "5 Honey 🍯"),
+            ("🐝 Leave the hive be",       "50 Coins 🪙"),
+            ("🚶 Ignore it",               "100 Coins 🪙"),
+        ],
+    },
+    "treasure-dust": {
+        "title": "Treasure Dust",
+        "description": "Old Salty is sneezing—says it's the scent of nearby treasure. Follow his nose?",
+        "choices": [
+            ("🪣 Dig where he points",    "5 Pumpkin Seed 🎃"),
+            ("🚫 Respect the boundaries", "50 Coins 🪙"),
+            ("🚶 Ignore it",              "3 Yellow Pansy 🌼"),
+        ],
+    },
+    "treasure-scroll": {
+        "title": "Treasure Scroll",
+        "description": "A crumpled scroll blows into your path, possibly leading to treasure. Will you read it?",
+        "choices": [
+            ("📜 Read it", "5 Pickaxes ⛏️"),
+            ("🔥 Burn it", "5 Wood 🪵"),
+        ],
+    },
+    "tywins-tax": {
+        "title": "Tywin's Tax",
+        "description": '"All Bumpkins must pay a special crop tax!" shouts Tywin. He demands payment... but something feels off.',
+        "choices": [
+            ("🧨 Sabotage his supply crate", "10 Kale 🥬"),
+            ("😇 Do nothing",                "100 Coins 🪙"),
+            ("📦 Pay the tax",               "3 Gems 💎"),
+        ],
+    },
+    "victorias-command": {
+        "title": "Victoria's Command",
+        "description": "Queen Victoria demands a tribute of rare flowers. Comply or resist?",
+        "choices": [
+            ("🪻 Sneak into the garden", "5 Iron ⛓️"),
+            ("🫡 Bow out gracefully",    "50 Coins 🪙"),
+            ("🚶 Ignore it",             "10 Carrot 🥕"),
+        ],
+    },
+    "whispering-flowers": {
+        "title": "Whispering Flowers",
+        "description": "Your sunflowers whisper secrets in the breeze. Lean in closer?",
+        "choices": [
+            ("👂 Listen closely", "100 Coins 🪙"),
+            ("🏃 Ignore them",    "50 Coins 🪙"),
+        ],
+    },
+    "whispers-in-the-wind": {
+        "title": "Whispers in the Wind",
+        "description": "A strange wind blows through the Plaza, carrying soft whispers that only you seem to hear. Something is calling...",
+        "choices": [
+            ("🌳 Dig beneath the tree", "5 Celestine Seed ✨"),
+            ("🙉 Ignore the voices",   "50 Coins 🪙"),
+            ("🔴 Block your ears",     "5 Wood 🪵"),
+        ],
+    },
+    "wild-creature": {
+        "title": "Wild Creature",
+        "description": "Cornwell spots a wild creature near the woods. Dangerous—or valuable?",
+        "choices": [
+            ("🧭 Investigate", "5 Gems 💎"),
+            ("🛡️ Stay safe", "5 Stone 🪨"),
+        ],
+    },
+    "wishing-well": {
+        "title": "Wishing Well",
+        "description": "An old wishing well glows faintly under the stars. Toss a coin and make a wish?",
+        "choices": [
+            ("🪙 Toss a coin", "200 Coins 🪙"),
+            ("🚶 Walk past",   "50 Coins 🪙"),
         ],
     },
     # Добавляй новые Questы ниже по тому же шаблону:
     # "quest-name": {
     #     "title": "...",
     #     "description": "...",
-    #     "choices": [("Вариант 1", "Награда 1"), ("Вариант 2", "Награда 2")],
+    #     "choices": [("Emoji Вариант", "Награда"), ...],
     # },
 }
+
+# Алиасы для квестов с апострофом — API может вернуть любой из вариантов:
+# без апострофа (основной), с апострофом, или апостроф → дефис.
+QUEST_DATA["bard's-visit"] = QUEST_DATA['bards-visit']
+QUEST_DATA['bard-s-visit'] = QUEST_DATA['bards-visit']
+QUEST_DATA["bert's-portal"] = QUEST_DATA['berts-portal']
+QUEST_DATA['bert-s-portal'] = QUEST_DATA['berts-portal']
+QUEST_DATA["cornwell's-curiosity"] = QUEST_DATA['cornwells-curiosity']
+QUEST_DATA['cornwell-s-curiosity'] = QUEST_DATA['cornwells-curiosity']
+QUEST_DATA["cornwell's-riddle"] = QUEST_DATA['cornwells-riddle']
+QUEST_DATA['cornwell-s-riddle'] = QUEST_DATA['cornwells-riddle']
+QUEST_DATA["finley's-fish"] = QUEST_DATA['finleys-fish']
+QUEST_DATA['finley-s-fish'] = QUEST_DATA['finleys-fish']
+QUEST_DATA["gambit's-bet"] = QUEST_DATA['gambits-bet']
+QUEST_DATA['gambit-s-bet'] = QUEST_DATA['gambits-bet']
+QUEST_DATA["grimbly's-feast"] = QUEST_DATA['grimblys-feast']
+QUEST_DATA['grimbly-s-feast'] = QUEST_DATA['grimblys-feast']
+QUEST_DATA["jester's-prank"] = QUEST_DATA['jesters-prank']
+QUEST_DATA['jester-s-prank'] = QUEST_DATA['jesters-prank']
+QUEST_DATA["merchant's-mystery-box"] = QUEST_DATA['merchants-mystery-box']
+QUEST_DATA['merchant-s-mystery-box'] = QUEST_DATA['merchants-mystery-box']
+QUEST_DATA["miranda's-song"] = QUEST_DATA['mirandas-song']
+QUEST_DATA['miranda-s-song'] = QUEST_DATA['mirandas-song']
+QUEST_DATA["pete's-fishing-challenge"] = QUEST_DATA['petes-fishing-challenge']
+QUEST_DATA['pete-s-fishing-challenge'] = QUEST_DATA['petes-fishing-challenge']
+QUEST_DATA["pete's-parade"] = QUEST_DATA['petes-parade']
+QUEST_DATA['pete-s-parade'] = QUEST_DATA['petes-parade']
+QUEST_DATA["raven's-secret"] = QUEST_DATA['ravens-secret']
+QUEST_DATA['raven-s-secret'] = QUEST_DATA['ravens-secret']
+QUEST_DATA["raven's-vision"] = QUEST_DATA['ravens-vision']
+QUEST_DATA['raven-s-vision'] = QUEST_DATA['ravens-vision']
+QUEST_DATA["timmy's-trouble"] = QUEST_DATA['timmys-trouble']
+QUEST_DATA['timmy-s-trouble'] = QUEST_DATA['timmys-trouble']
+QUEST_DATA["tywin's-tax"] = QUEST_DATA['tywins-tax']
+QUEST_DATA['tywin-s-tax'] = QUEST_DATA['tywins-tax']
+QUEST_DATA["victoria's-command"] = QUEST_DATA['victorias-command']
+QUEST_DATA['victoria-s-command'] = QUEST_DATA['victorias-command']
 
 
 def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
