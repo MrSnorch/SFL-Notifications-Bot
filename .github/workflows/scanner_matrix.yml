@@ -109,6 +109,7 @@ jobs:
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
           SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
+          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
         run: |
           python sfl_scanner.py \
             --user ${{ matrix.telegram_id }} \
