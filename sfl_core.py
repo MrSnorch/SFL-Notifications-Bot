@@ -1013,6 +1013,8 @@ def format_status_message(events: list[Event], farm_id: str,
     # Собираем отображаемые строки: каждая волна — отдельный элемент (ms, line)
     display_items: list[tuple[int, str]] = []
 
+    _daily_available = False
+    _streaks = 0
     if daily_info is not None:
         _streaks = daily_info.get("streaks", 0)
         if daily_info.get("collected_today"):
@@ -1030,8 +1032,8 @@ def format_status_message(events: list[Event], farm_id: str,
                 display_items.append((_next_reset_ms,
                     f"🎁 <b>Daily Reward [{_streaks}]</b> — {time_str}"))
         else:
-            # Награда доступна к получению
-            lines.append(_i18n("daily_status_available", lang, streaks=_streaks))
+            # Награда доступна к получению — покажем в секции "Готово к сбору"
+            _daily_available = True
 
     # ── Twitter Gift countdown (вычисляем до проверки pending) ────────────────────
     _tg_is_ready = False
@@ -1096,8 +1098,10 @@ def format_status_message(events: list[Event], farm_id: str,
 
     ready_resources = [e for e in events if e.ready_count > 0 and e.resource_key != "skills"]
     ready_skills    = [e for e in events if e.ready_count > 0 and e.resource_key == "skills"]
-    if ready_resources or _tg_is_ready:
+    if ready_resources or _tg_is_ready or _daily_available:
         lines.append(_i18n("ready_section", lang))
+        if _daily_available:
+            lines.append(f"  🎁 Daily Reward [{_streaks}]")
         for e in ready_resources:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
             if e.resource_key == "balloon" and e.last_ready_at_ms:
