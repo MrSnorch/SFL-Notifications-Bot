@@ -277,23 +277,26 @@ def scan_user(user: dict) -> "int | None":
     )
 
     # ── Квест (Pumpkin Pete) ──────────────────────────────────────────────────
+    # Алерт о готовности шлёт process_ready_alerts через Event с resource_key="quest".
+    # Здесь отправляем расширенное уведомление с описанием квеста (один раз).
     tg_data   = farm.get("telegram") or {}
     quest     = tg_data.get("quest") or {}
     q_name    = quest.get("name", "")
     q_choices = quest.get("choices", [])
+    q_start   = quest.get("startAt", 0)
     last_quest_notified = state.get("last_quest_notified", "")
 
-    if q_name and not q_choices and q_name != last_quest_notified:
-        # Новый квест, игрок ещё не выбрал — отправляем уведомление
-        text = format_quest_notification(q_name, lang=_lang)
-        tg_send(TG_TOKEN, telegram_id, text)
-        state["last_quest_notified"] = q_name
-        log.info(f"[{username}] Новый квест: {q_name}")
-    elif q_choices and q_name and q_name == last_quest_notified:
-        # Игрок ответил на квест — сбрасываем чтобы следующий квест с таким же именем
-        # (если повторится) снова уведомил. На практике квесты не повторяются,
-        # но это защита от edge case.
-        pass  # last_quest_notified остаётся — повторное уведомление не нужно
+    if q_name and not q_choices and q_start and q_start <= int(time.time() * 1000):
+        if not last_quest_notified:
+            # Холодный старт — запоминаем без уведомления
+            state["last_quest_notified"] = q_name
+            log.info(f"[{username}] Квест зафиксирован (холодный старт): {q_name}")
+        elif q_name != last_quest_notified:
+            # Новый квест стал доступен — шлём детальное сообщение
+            text = format_quest_notification(q_name, lang=_lang)
+            tg_send(TG_TOKEN, telegram_id, text)
+            state["last_quest_notified"] = q_name
+            log.info(f"[{username}] Новый квест: {q_name}")
 
     state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])
 
