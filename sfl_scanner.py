@@ -253,6 +253,7 @@ def scan_user(user: dict) -> "int | None":
     # ── Daily Rewards — данные для статус-сообщения ───────────────────────────
     _dr            = farm.get("dailyRewards") or {}
     _dr_streaks    = _dr.get("streaks", 0)
+    _dr_next_streaks = _dr_streaks + 1  # следующая награда = текущий стрик + 1
     _dr_collected_ms = (_dr.get("chest") or {}).get("collectedAt", 0)
     _now_utc       = datetime.now(_utc_tz)
     _today_utc_str = _now_utc.strftime("%Y-%m-%d")
@@ -262,7 +263,7 @@ def scan_user(user: dict) -> "int | None":
     )
     _tomorrow_utc  = (_now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
-    daily_info = {"streaks": _dr_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
+    daily_info = {"streaks": _dr_next_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
@@ -339,9 +340,9 @@ def scan_user(user: dict) -> "int | None":
             state["daily_reminder_msg_id"] = 0
         # Шлём только если награда ещё не собрана — иначе просто фиксируем дату
         if not _dr_collected_today:
-            text = format_daily_reward_ready(_dr_streaks, lang=_lang)
+            text = format_daily_reward_ready(_dr_next_streaks, lang=_lang)
             tg_send(TG_TOKEN, telegram_id, text, silent=True)
-            log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_streaks})")
+            log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_next_streaks})")
         else:
             log.info(f"[{username}] Daily Rewards: новый день, но награда уже собрана — без уведомления")
         state["daily_notified_date"]           = _today_utc_str
@@ -362,7 +363,7 @@ def scan_user(user: dict) -> "int | None":
         _hours_sent     = state.get("daily_reminder_hours_sent", [])
         if _today_utc_str != _dismissed_date and _utc_hour not in _hours_sent:
             _hours_left = 24 - _utc_hour
-            text = format_daily_reminder(_dr_streaks, _hours_left, lang=_lang)
+            text = format_daily_reminder(_dr_next_streaks, _hours_left, lang=_lang)
             _old_mid = state.get("daily_reminder_msg_id", 0)
             if _old_mid:
                 tg_delete(TG_TOKEN, telegram_id, _old_mid)
