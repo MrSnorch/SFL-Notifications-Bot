@@ -1110,7 +1110,7 @@ QUEST_DATA: dict[str, dict] = {
         "title": "Bert's Portal",
         "description": "Bert says a mushroom ring is a portal to another land. Try jumping in?",
         "choices": [
-            ("🧙‍♂️ Step into the ring", "5 Gold 🥇"),
+            ("🧙‍♂️ Step into the ring", "1 Gold 🥇"),
             ("🧿 Back away slowly",    "50 Coins 🪙"),
             ("🚶 Ignore it",           "3 Red Pansy 🌺"),
         ],
@@ -1257,7 +1257,7 @@ QUEST_DATA: dict[str, dict] = {
         "choices": [
             ("👑 Swap the crown!", "10 Pumpkin 🎃"),
             ("⚖️ Warn the queen",  "50 Coins 🪙"),
-            ("🚶 Ignore it",       "5 Gold 🥇"),
+            ("🚶 Ignore it",       "1 Gold 🥇"),
         ],
     },
     "lost-pirate-map": {
@@ -1272,7 +1272,7 @@ QUEST_DATA: dict[str, dict] = {
         "title": "Lost Scroll",
         "description": "Cornwell misplaced a scroll that could reveal ancient truths. Help find it?",
         "choices": [
-            ("🛠️ Enter the hidden room", "5 Celestine Seed 🌱"),
+            ("🛠️ Enter the hidden room", "1 Celestine Seed 🌱"),
             ("📚 Leave the library",      "50 Coins 🪙"),
             ("🚶 Ignore it",              "3 Red Pansy 🌺"),
         ],
@@ -1446,7 +1446,7 @@ QUEST_DATA: dict[str, dict] = {
         "title": "Whispers in the Wind",
         "description": "A strange wind blows through the Plaza, carrying soft whispers that only you seem to hear. Something is calling...",
         "choices": [
-            ("🌳 Dig beneath the tree", "5 Celestine Seed ✨"),
+            ("🌳 Dig beneath the tree", "1 Celestine Seed ✨"),
             ("🙉 Ignore the voices",   "50 Coins 🪙"),
             ("🔴 Block your ears",     "5 Wood 🪵"),
         ],
