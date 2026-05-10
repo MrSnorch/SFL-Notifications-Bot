@@ -759,8 +759,9 @@ def scan_farm(farm: dict, track: dict,
             petal_ts = _fix_ts(petal_ts)
             solved_today = False
             if petal_ts:
-                solved_dt = datetime.fromtimestamp(petal_ts / 1000, tz=UA_TZ).date()
-                today_dt  = datetime.now(tz=UA_TZ).date()
+                from datetime import timezone as _utc
+                solved_dt = datetime.fromtimestamp(petal_ts / 1000, tz=_utc.utc).date()
+                today_dt  = datetime.now(tz=_utc.utc).date()
                 solved_today = (solved_dt == today_dt)
 
             if not solved_today:
