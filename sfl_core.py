@@ -920,9 +920,9 @@ _I18N = {
         "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
     "twitter_gift_ready": {
-        "ru": "🐦 <b>Twitter Gift</b> — ✅ готово к сбору!",
-        "en": "🐦 <b>Twitter Gift</b> — ✅ ready to collect!",
-        "uk": "🐦 <b>Twitter Gift</b> — ✅ готово до збору!",
+        "ru": "🐦 <b>Twitter Gift</b> — готово к сбору ✅",
+        "en": "🐦 <b>Twitter Gift</b> — ready to collect ✅",
+        "uk": "🐦 <b>Twitter Gift</b> — готово до збору ✅",
     },
 }
 
