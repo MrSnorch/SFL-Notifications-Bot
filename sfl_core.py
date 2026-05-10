@@ -358,7 +358,7 @@ TRACK_LABELS = [
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
     ("balloon",    "❤️ Шарик"),
-    ("quest",      "🎁 Quest"),
+    ("quest",      "📜 Quest"),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -794,7 +794,7 @@ def scan_farm(farm: dict, track: dict,
         q_choices = quest.get("choices", [])
         if q_start and q_name and not q_choices:
             rc = 1 if q_start <= now_ms else 0
-            events.append(Event("Quest", "🎁", q_start, 1, rc,
+            events.append(Event("Quest", "📜", q_start, 1, rc,
                 extra=q_name,
                 resource_key="quest"))
 
@@ -890,29 +890,34 @@ _I18N = {
         "uk": " Відлітає о {clock} (через {mins} хв)",
     },
     "quest_arrived": {
-        "ru": "🎁 <b>Новый Quest доступен!</b>",
-        "en": "🎁 <b>New quest available!</b>",
-        "uk": "🎁 <b>Новий Quest доступний!</b>",
+        "ru": "📜 <b>Новый Quest доступен!</b>",
+        "en": "📜 <b>New quest available!</b>",
+        "uk": "📜 <b>Новий Quest доступний!</b>",
     },
     "daily_reward_ready": {
-        "ru": "🎁 <b>Ежедневная награда доступна!</b>\n🔥 Стрик: {streaks} дн.",
-        "en": "🎁 <b>Daily reward is ready!</b>\n🔥 Streak: {streaks} days",
-        "uk": "🎁 <b>Щоденна нагорода доступна!</b>\n🔥 Стрік: {streaks} дн.",
+        "ru": "🎁 <b>Daily Reward [{streaks}] — готово к получению ✅</b>",
+        "en": "🎁 <b>Daily Reward [{streaks}] — ready to collect ✅</b>",
+        "uk": "🎁 <b>Daily Reward [{streaks}] — готово до отримання ✅</b>",
     },
     "daily_reward_reminder": {
-        "ru": "⏰ <b>Не забудь забрать ежедневную награду!</b>\nОсталось {hours} ч. до сброса\n🔥 Стрик: {streaks} дн.",
-        "en": "⏰ <b>Don't forget your daily reward!</b>\n{hours} h. until reset\n🔥 Streak: {streaks} days",
-        "uk": "⏰ <b>Не забудь забрати щоденну нагороду!</b>\nЗалишилось {hours} год. до скидання\n🔥 Стрік: {streaks} дн.",
+        "ru": "🎁 <b>Daily Reward [{streaks}] — не забудь забрать! осталось {hours}ч ⚠️</b>",
+        "en": "🎁 <b>Daily Reward [{streaks}] — don't forget to collect! {hours}h left ⚠️</b>",
+        "uk": "🎁 <b>Daily Reward [{streaks}] — не забудь забрати! залишилось {hours}год ⚠️</b>",
     },
     "daily_status_collected": {
-        "ru": "🎁 Daily: ✅ стрик <b>{streaks}</b> дн.",
-        "en": "🎁 Daily: ✅ streak <b>{streaks}</b> days",
-        "uk": "🎁 Daily: ✅ стрік <b>{streaks}</b> дн.",
+        "ru": "🎁 Daily Reward [{streaks}] — ✅",
+        "en": "🎁 Daily Reward [{streaks}] — ✅",
+        "uk": "🎁 Daily Reward [{streaks}] — ✅",
     },
     "daily_status_pending": {
-        "ru": "🎁 Daily: ⏳ <b>не забери!</b> стрик {streaks} дн.",
-        "en": "🎁 Daily: ⏳ <b>collect it!</b> streak {streaks} days",
-        "uk": "🎁 Daily: ⏳ <b>забери!</b> стрік {streaks} дн.",
+        "ru": "🎁 <b>Daily Reward [{streaks}] — забери!</b>",
+        "en": "🎁 <b>Daily Reward [{streaks}] — collect it!</b>",
+        "uk": "🎁 <b>Daily Reward [{streaks}] — забери!</b>",
+    },
+    "daily_status_available": {
+        "ru": "🎁 <b>Daily Reward [{streaks}] доступен к получению!</b>",
+        "en": "🎁 <b>Daily Reward [{streaks}] available to collect!</b>",
+        "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
 }
 
@@ -996,21 +1001,34 @@ def format_status_message(events: list[Event], farm_id: str,
     pending = [e for e in events if e.ready_count < e.count]
     lines = [_i18n("farm_header", lang, farm_id=farm_id)]
 
+    now_ms = int(time.time() * 1000)
+    # Собираем отображаемые строки: каждая волна — отдельный элемент (ms, line)
+    display_items: list[tuple[int, str]] = []
+
     if daily_info is not None:
         _streaks = daily_info.get("streaks", 0)
         if daily_info.get("collected_today"):
-            lines.append(_i18n("daily_status_collected", lang, streaks=_streaks))
+            # Награда уже собрана — показываем обратный отсчёт до следующего сброса
+            _next_reset_ms = daily_info.get("next_reset_ms", 0)
+            if _next_reset_ms:
+                ms_left = max(0, _next_reset_ms - now_ms)
+                if time_format == "clock":
+                    time_str = datetime.fromtimestamp(_next_reset_ms / 1000, tz=_tz).strftime("%H:%M")
+                elif time_format == "countdown":
+                    time_str = _fmt_ms_human(ms_left, lang)
+                else:  # both
+                    clock = datetime.fromtimestamp(_next_reset_ms / 1000, tz=_tz).strftime("%H:%M")
+                    time_str = f"{_fmt_ms_human(ms_left, lang)} — {clock}"
+                display_items.append((_next_reset_ms,
+                    f"🎁 <b>Daily Reward [{_streaks}]</b> — {time_str}"))
         else:
-            lines.append(_i18n("daily_status_pending", lang, streaks=_streaks))
+            # Награда доступна к получению
+            lines.append(_i18n("daily_status_available", lang, streaks=_streaks))
 
-    if not pending:
+    if not pending and not display_items:
         lines.append(_i18n("all_ready", lang))
     else:
         lines.append("")
-        now_ms = int(time.time() * 1000)
-
-        # Собираем отображаемые строки: каждая волна — отдельный элемент (ms, line)
-        display_items: list[tuple[int, str]] = []
 
         for e in pending:
             swarm_extra = ""
@@ -1562,7 +1580,7 @@ def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
         if len(parts) == 2:
             data = QUEST_DATA.get(parts[0] + "s-" + parts[1])
 
-    header = "🎁 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot?start=MrSnorch\">Pumpkin Pete</a>"
+    header = "📜 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot?start=MrSnorch\">Pumpkin Pete</a>"
 
     if not data:
         # Quest неизвестен — показываем имя как есть
