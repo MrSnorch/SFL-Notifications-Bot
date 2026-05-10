@@ -339,6 +339,7 @@ DEFAULT_TRACKING = {
     "sunstones": False, "fruits": True, "flowers": True,
     "honey": True, "mushrooms": False, "animals": False,
     "balloon": True,
+    "quest": True,
 }
 
 TRACK_LABELS = [
@@ -357,6 +358,7 @@ TRACK_LABELS = [
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
     ("balloon",    "❤️ Шарик"),
+    ("quest",      "🎁 Квест"),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -781,6 +783,21 @@ def scan_farm(farm: dict, track: dict,
                         last_ready_at_ms=next_end,
                         resource_key="balloon"))
 
+    # ── QUEST (Pumpkin Pete Telegram quest) ──────────────────────────────────
+    # startAt — время когда квест станет доступен (может быть в будущем).
+    # choices: [] — квест ещё не отвечен.
+    if track.get("quest", True):
+        tg_data = farm.get("telegram") or {}
+        quest   = tg_data.get("quest") or {}
+        q_start = _fix_ts(quest.get("startAt", 0))
+        q_name  = quest.get("name", "")
+        q_choices = quest.get("choices", [])
+        if q_start and q_name and not q_choices:
+            rc = 1 if q_start <= now_ms else 0
+            events.append(Event("Квест", "🎁", q_start, 1, rc,
+                extra=q_name,
+                resource_key="quest"))
+
     # ── ДИНАМИЧЕСКИЕ РЕСУРСЫ (автодетект) ────────────────────────────────────
     for dr in (dynamic_resources or []):
         key = dr["key"]
@@ -871,6 +888,11 @@ _I18N = {
         "ru": " Улетает в {clock} (через {mins} мин)",
         "en": " Leaves at {clock} (in {mins} min)",
         "uk": " Відлітає о {clock} (через {mins} хв)",
+    },
+    "quest_arrived": {
+        "ru": "🎁 <b>Новый квест доступен!</b>",
+        "en": "🎁 <b>New quest available!</b>",
+        "uk": "🎁 <b>Новий квест доступний!</b>",
     },
 }
 
@@ -1032,6 +1054,8 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
             clock = datetime.fromtimestamp(e.last_ready_at_ms / 1000, tz=UA_TZ).strftime("%H:%M")
             until = _i18n("balloon_until", lang, clock=clock, mins=mins_left)
         return _i18n("balloon_arrived", lang, until=until)
+    if getattr(e, "resource_key", "") == "quest":
+        return _i18n("quest_arrived", lang)
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
     return _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
