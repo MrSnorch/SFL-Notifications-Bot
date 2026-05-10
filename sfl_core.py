@@ -885,9 +885,9 @@ _I18N = {
         "uk": "❤️ <b>Шарик прилетів!</b>{until}",
     },
     "balloon_until": {
-        "ru": " Улетает в {clock} (через {mins} мин)",
-        "en": " Leaves at {clock} (in {mins} min)",
-        "uk": " Відлітає о {clock} (через {mins} хв)",
+        "ru": " Улетает в {clock}",
+        "en": " Leaves at {clock}",
+        "uk": " Відлітає о {clock}",
     },
     "quest_arrived": {
         "ru": "📜 <b>Новый Quest доступен!</b>",
