@@ -88,18 +88,20 @@ def fetch_x_qualifying_posts(x_username: str, bearer_token: str) -> list[dict]:
         "tweet.fields": "created_at,entities",
     }
     headers = {"Authorization": f"Bearer {bearer_token}"}
+    log.info(f"Twitter API: запрос для @{x_username}, query={query!r}")
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code == 401:
-            log.warning("Twitter API: неверный Bearer Token")
+            log.warning("Twitter API: неверный Bearer Token (401)")
             return []
         if r.status_code == 429:
-            log.warning("Twitter API: rate limit")
+            log.warning("Twitter API: rate limit (429)")
             return []
         if r.status_code != 200:
             log.warning(f"Twitter API: {r.status_code} {r.text[:200]}")
             return []
         data = r.json()
+        log.info(f"Twitter API: ответ получен, твитов в ответе: {len(data.get('data') or [])}")
     except Exception as e:
         log.warning(f"Twitter API: ошибка запроса: {e}")
         return []
@@ -111,7 +113,9 @@ def fetch_x_qualifying_posts(x_username: str, bearer_token: str) -> list[dict]:
             f"#{t['tag'].lower()}"
             for t in (tweet.get("entities") or {}).get("hashtags", [])
         }
-        if len(tags & _X_HASHTAGS) >= _X_MIN_TAGS:
+        matched = tags & _X_HASHTAGS
+        log.debug(f"Twitter API: твит {tweet.get('id')} — теги {tags}, совпадений {len(matched)}/{_X_MIN_TAGS}")
+        if len(matched) >= _X_MIN_TAGS:
             try:
                 dt = datetime.fromisoformat(
                     tweet["created_at"].replace("Z", "+00:00")
@@ -119,6 +123,7 @@ def fetch_x_qualifying_posts(x_username: str, bearer_token: str) -> list[dict]:
                 qualifying.append({"created_at_ms": int(dt.timestamp() * 1000)})
             except Exception:
                 pass
+    log.info(f"Twitter API: квалифицирующих постов: {len(qualifying)}")
     return qualifying
 
 
@@ -335,9 +340,41 @@ def scan_user(user: dict) -> "int | None":
     _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
     daily_info = {"streaks": _dr_next_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
+    # ── Twitter / X Gift — сканирование (до статус-сообщения!) ──────────────
+    _x_username = (user.get("x_username") or "").strip()
+    if not _x_username:
+        log.debug(f"[{username}] Twitter Gift: x_username не задан, пропускаем")
+    elif not TWITTER_TOKEN:
+        log.warning(f"[{username}] Twitter Gift: TWITTER_BEARER_TOKEN не задан в env, пропускаем")
+    else:
+        _x_scanned_date = state.get("twitter_scanned_date", "")
+        if _today_utc_str == _x_scanned_date:
+            log.debug(f"[{username}] Twitter Gift: сканирование уже выполнено сегодня ({_today_utc_str}), пропускаем")
+        else:
+            log.info(f"[{username}] Twitter Gift: сканируем посты @{_x_username}...")
+            posts = fetch_x_qualifying_posts(_x_username, TWITTER_TOKEN)
+            if posts:
+                _latest_ms = max(p["created_at_ms"] for p in posts)
+                _stored_ms = state.get("twitter_last_post_ms", 0)
+                if _latest_ms > _stored_ms:
+                    state["twitter_last_post_ms"] = _latest_ms
+                    state["twitter_gift_notified_ms"] = 0  # сбросить: новый пост
+                    log.info(f"[{username}] Twitter Gift: новый квалифицирующий пост ({_latest_ms}), обновлён last_post_ms")
+                else:
+                    log.info(f"[{username}] Twitter Gift: найдены посты, но новых нет (latest={_latest_ms}, stored={_stored_ms})")
+            else:
+                log.info(f"[{username}] Twitter Gift: квалифицирующих постов не найдено")
+            state["twitter_scanned_date"] = _today_utc_str
+
     # ── Twitter info для статус-сообщения ────────────────────────────────────
     _tw_last_post_ms = state.get("twitter_last_post_ms", 0)
     twitter_info = {"last_post_ms": _tw_last_post_ms} if _tw_last_post_ms else None
+    if _tw_last_post_ms:
+        _now_ms_tw = int(time.time() * 1000)
+        _days_since = (_now_ms_tw - _tw_last_post_ms) / 86400000
+        log.debug(f"[{username}] Twitter Gift: last_post={_tw_last_post_ms} ({_days_since:.1f}д назад), отображаем в закрепе")
+    else:
+        log.debug(f"[{username}] Twitter Gift: last_post_ms=0, блок Twitter в закрепе не отображается")
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
@@ -449,31 +486,27 @@ def scan_user(user: dict) -> "int | None":
             state["daily_reminder_msg_id"]     = _mid or 0
             log.info(f"[{username}] Daily Rewards: напоминание {_utc_hour}:00 UTC (осталось {_hours_left}ч)")
 
-    # ── Twitter / X Gift ──────────────────────────────────────────────────────
-    _x_username = (user.get("x_username") or "").strip()
+    # ── Twitter Gift — уведомление (7 дней с момента поста) ─────────────────
+    # Сканирование уже выполнено выше (до статус-сообщения), здесь только уведомление
     if _x_username and TWITTER_TOKEN:
-        _x_scanned_date = state.get("twitter_scanned_date", "")
-        # Сканируем X раз в день
-        if _today_utc_str != _x_scanned_date:
-            posts = fetch_x_qualifying_posts(_x_username, TWITTER_TOKEN)
-            if posts:
-                _latest_ms = max(p["created_at_ms"] for p in posts)
-                _stored_ms = state.get("twitter_last_post_ms", 0)
-                if _latest_ms > _stored_ms:
-                    state["twitter_last_post_ms"] = _latest_ms
-                    state["twitter_gift_notified_ms"] = 0  # сбросить: новый пост
-                    log.info(f"[{username}] Twitter: новый пост с хэштегами ({_latest_ms})")
-            state["twitter_scanned_date"] = _today_utc_str
-
-        # Прошло ли 7 дней с момента публикации?
         _last_post_ms  = state.get("twitter_last_post_ms", 0)
         _notified_ms   = state.get("twitter_gift_notified_ms", 0)
         _seven_days_ms = 7 * 24 * 60 * 60 * 1000
-        if _last_post_ms and now_ms >= _last_post_ms + _seven_days_ms:
-            if _notified_ms < _last_post_ms:  # ещё не уведомляли за этот пост
-                tg_send(TG_TOKEN, telegram_id, format_twitter_gift_ready(lang=_lang))
-                state["twitter_gift_notified_ms"] = now_ms
-                log.info(f"[{username}] Twitter Gift: уведомление отправлено")
+        if _last_post_ms:
+            _now_ms_check = int(time.time() * 1000)
+            _gift_ready_ms = _last_post_ms + _seven_days_ms
+            if _now_ms_check >= _gift_ready_ms:
+                if _notified_ms < _last_post_ms:  # ещё не уведомляли за этот пост
+                    tg_send(TG_TOKEN, telegram_id, format_twitter_gift_ready(lang=_lang))
+                    state["twitter_gift_notified_ms"] = _now_ms_check
+                    log.info(f"[{username}] Twitter Gift: уведомление отправлено (post={_last_post_ms})")
+                else:
+                    log.debug(f"[{username}] Twitter Gift: gift доступен, уведомление уже отправлялось (notified={_notified_ms})")
+            else:
+                _hours_left = (_gift_ready_ms - _now_ms_check) / 3600000
+                log.debug(f"[{username}] Twitter Gift: ещё {_hours_left:.1f}ч до готовности")
+        else:
+            log.debug(f"[{username}] Twitter Gift: нет сохранённого поста, уведомление не отправляется")
 
     save_state(telegram_id, state)
     ready_cnt = sum(1 for e in events if e.ready_count > 0)
