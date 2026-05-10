@@ -2,7 +2,7 @@ name: SFL New User Launcher
 
 # Запускается каждые 5 минут.
 # Находит активных юзеров с scanner_dispatched=false
-# и запускает для каждого отдельный runner через scanner_matrix.yml (single_user).
+# и запускает для каждого отдельный runner через scanner_single.yml.
 # Этот runner самостоятельно перезапускает себя до тех пор, пока
 # очередной полный прогон матрицы не подхватит юзера и не вытеснит его
 # через per-user concurrency (group: sfl-user-{telegram_id}).
@@ -67,12 +67,12 @@ jobs:
               && echo "  ✅ ${TG_ID}: scanner_dispatched=true" \
               || echo "  ⚠️ ${TG_ID}: не удалось обновить флаг"
 
-            # Запускаем single_user runner
+            # Запускаем single_user runner (отдельный workflow, не конкурирует с полной матрицей)
             RESULT=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
-              -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"single_user\":\"${TG_ID}\"}}")
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_single.yml/dispatches" \
+              -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"telegram_id\":\"${TG_ID}\"}}")
 
             if [ "$RESULT" = "204" ]; then
               echo "  🚀 ${TG_ID}: runner запущен (HTTP ${RESULT})"

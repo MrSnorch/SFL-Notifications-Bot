@@ -1,0 +1,88 @@
+name: SFL Scanner Single User
+
+# Запускается new_user_launcher'ом для нового юзера.
+# Имеет собственную per-user concurrency — не конкурирует с полной матрицей.
+# Работает до тех пор, пока полная матрица не подхватит юзера на следующем
+# цикле и не закроет этот runner через sfl-user-{telegram_id} concurrency.
+
+on:
+  workflow_dispatch:
+    inputs:
+      telegram_id:
+        description: 'telegram_id нового юзера'
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: sfl-user-${{ inputs.telegram_id }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run loop for user ${{ inputs.telegram_id }}
+        id: scan
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
+        run: |
+          python sfl_scanner.py \
+            --user ${{ inputs.telegram_id }} \
+            --duration 20700 \
+            --interval 30
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      # 429 — перезапускаем на новом runner'е (новый IP)
+      - name: Retry on new IP if rate limited
+        if: steps.scan.outputs.exit_code == '2'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔄 429, перезапускаем юзера ${{ inputs.telegram_id }} на новом IP..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_single.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"telegram_id\":\"${{ inputs.telegram_id }}\"}}" \
+            && echo "✅ Retry triggered" \
+            || echo "⚠️ Failed to trigger retry"
+
+  # Self-restart: крутимся пока полная матрица не закроет нас через per-user concurrency
+  restart:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger next single-user run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔄 Перезапуск single-user runner для юзера ${{ inputs.telegram_id }}..."
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_single.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\",\"inputs\":{\"telegram_id\":\"${{ inputs.telegram_id }}\"}}" \
+            && echo "✅ Next run triggered" \
+            || echo "⚠️ Failed"
