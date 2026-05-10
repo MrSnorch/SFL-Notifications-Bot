@@ -340,31 +340,9 @@ def scan_user(user: dict) -> "int | None":
     _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
     daily_info = {"streaks": _dr_next_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
-    # ── Twitter / X Gift — сканирование (до статус-сообщения!) ──────────────
+    # ── Twitter / X Gift ─────────────────────────────────────────────────────
+    # Дата поста записывается вручную через кнопку «Я запостил» в закрепе
     _x_username = (user.get("x_username") or "").strip()
-    if not _x_username:
-        log.debug(f"[{username}] Twitter Gift: x_username не задан, пропускаем")
-    elif not TWITTER_TOKEN:
-        log.warning(f"[{username}] Twitter Gift: TWITTER_BEARER_TOKEN не задан в env, пропускаем")
-    else:
-        _x_scanned_date = state.get("twitter_scanned_date", "")
-        if _today_utc_str == _x_scanned_date:
-            log.debug(f"[{username}] Twitter Gift: сканирование уже выполнено сегодня ({_today_utc_str}), пропускаем")
-        else:
-            log.info(f"[{username}] Twitter Gift: сканируем посты @{_x_username}...")
-            posts = fetch_x_qualifying_posts(_x_username, TWITTER_TOKEN)
-            if posts:
-                _latest_ms = max(p["created_at_ms"] for p in posts)
-                _stored_ms = state.get("twitter_last_post_ms", 0)
-                if _latest_ms > _stored_ms:
-                    state["twitter_last_post_ms"] = _latest_ms
-                    state["twitter_gift_notified_ms"] = 0  # сбросить: новый пост
-                    log.info(f"[{username}] Twitter Gift: новый квалифицирующий пост ({_latest_ms}), обновлён last_post_ms")
-                else:
-                    log.info(f"[{username}] Twitter Gift: найдены посты, но новых нет (latest={_latest_ms}, stored={_stored_ms})")
-            else:
-                log.info(f"[{username}] Twitter Gift: квалифицирующих постов не найдено")
-            state["twitter_scanned_date"] = _today_utc_str
 
     # ── Twitter info для статус-сообщения ────────────────────────────────────
     _tw_last_post_ms = state.get("twitter_last_post_ms", 0)
@@ -385,7 +363,7 @@ def scan_user(user: dict) -> "int | None":
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
-                                              reply_markup=panel_keyboard(_lang, _is_active))
+                                              reply_markup=panel_keyboard(_lang, _is_active, x_username=_x_username))
     state["status_msg_id"] = new_msg_id
 
     # Закрепляем если появилось новое сообщение (старое не удалось отредактировать)
@@ -487,8 +465,8 @@ def scan_user(user: dict) -> "int | None":
             log.info(f"[{username}] Daily Rewards: напоминание {_utc_hour}:00 UTC (осталось {_hours_left}ч)")
 
     # ── Twitter Gift — уведомление (7 дней с момента поста) ─────────────────
-    # Сканирование уже выполнено выше (до статус-сообщения), здесь только уведомление
-    if _x_username and TWITTER_TOKEN:
+    # Дата поста записывается вручную через кнопку «Я запостил» в закрепе
+    if _x_username:
         _last_post_ms  = state.get("twitter_last_post_ms", 0)
         _notified_ms   = state.get("twitter_gift_notified_ms", 0)
         _seven_days_ms = 7 * 24 * 60 * 60 * 1000
