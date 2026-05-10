@@ -358,7 +358,7 @@ TRACK_LABELS = [
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
     ("balloon",    "❤️ Шарик"),
-    ("quest",      "🎁 Квест"),
+    ("quest",      "🎁 Quest"),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -784,8 +784,8 @@ def scan_farm(farm: dict, track: dict,
                         resource_key="balloon"))
 
     # ── QUEST (Pumpkin Pete Telegram quest) ──────────────────────────────────
-    # startAt — время когда квест станет доступен (может быть в будущем).
-    # choices: [] — квест ещё не отвечен.
+    # startAt — время когда Quest станет доступен (может быть в будущем).
+    # choices: [] — Quest ещё не отвечен.
     if track.get("quest", True):
         tg_data = farm.get("telegram") or {}
         quest   = tg_data.get("quest") or {}
@@ -794,7 +794,7 @@ def scan_farm(farm: dict, track: dict,
         q_choices = quest.get("choices", [])
         if q_start and q_name and not q_choices:
             rc = 1 if q_start <= now_ms else 0
-            events.append(Event("Квест", "🎁", q_start, 1, rc,
+            events.append(Event("Quest", "🎁", q_start, 1, rc,
                 extra=q_name,
                 resource_key="quest"))
 
@@ -890,9 +890,9 @@ _I18N = {
         "uk": " Відлітає о {clock} (через {mins} хв)",
     },
     "quest_arrived": {
-        "ru": "🎁 <b>Новый квест доступен!</b>",
+        "ru": "🎁 <b>Новый Quest доступен!</b>",
         "en": "🎁 <b>New quest available!</b>",
-        "uk": "🎁 <b>Новий квест доступний!</b>",
+        "uk": "🎁 <b>Новий Quest доступний!</b>",
     },
 }
 
@@ -1062,8 +1062,8 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
                  cnt=cnt, extra=extra_label)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ДАННЫЕ КВЕСТОВ (Pumpkin Pete Telegram quests)
-# Ключ — quest["name"] из API. Добавляй новые квесты сюда по мере появления.
+# ДАННЫЕ QuestОВ (Pumpkin Pete Telegram quests)
+# Ключ — quest["name"] из API. Добавляй новые Questы сюда по мере появления.
 # ══════════════════════════════════════════════════════════════════════════════
 
 QUEST_DATA: dict[str, dict] = {
@@ -1083,7 +1083,7 @@ QUEST_DATA: dict[str, dict] = {
             ("Ignore it",  "5 Wood"),
         ],
     },
-    # Добавляй новые квесты ниже по тому же шаблону:
+    # Добавляй новые Questы ниже по тому же шаблону:
     # "quest-name": {
     #     "title": "...",
     #     "description": "...",
@@ -1093,13 +1093,13 @@ QUEST_DATA: dict[str, dict] = {
 
 
 def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
-    """Форматирует уведомление о новом квесте."""
+    """Форматирует уведомление о новом Questе."""
     data = QUEST_DATA.get(quest_name)
 
-    header = "🎁 <b>Новый квест</b>  <a href=\"https://t.me/pumpkin_pete_bot\">Pumpkin Pete</a>"
+    header = "🎁 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot\">Pumpkin Pete</a>"
 
     if not data:
-        # Квест неизвестен — показываем имя как есть
+        # Quest неизвестен — показываем имя как есть
         display_name = quest_name.replace("-", " ").title()
         return f"{header}\n\n<b>{display_name}</b>"
 
