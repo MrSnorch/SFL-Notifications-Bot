@@ -387,7 +387,9 @@ def scan_user(user: dict) -> "int | None":
         # Шлём только если награда ещё не собрана — иначе просто фиксируем дату
         if not _dr_collected_today:
             text = format_daily_reward_ready(_dr_next_streaks, lang=_lang)
-            tg_send(TG_TOKEN, telegram_id, text, silent=True)
+            _dismiss_kb = {"inline_keyboard": [[{"text": "❌", "callback_data": "daily_dismiss"}]]}
+            _mid = tg_send(TG_TOKEN, telegram_id, text, silent=True, reply_markup=_dismiss_kb)
+            state["daily_reminder_msg_id"] = _mid or 0
             log.info(f"[{username}] Daily Rewards: midnight-уведомление (стрик {_dr_next_streaks})")
         else:
             log.info(f"[{username}] Daily Rewards: новый день, но награда уже собрана — без уведомления")
