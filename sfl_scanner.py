@@ -34,14 +34,15 @@ from sfl_core import (
     tg_unpin_message, Event, split_ready_into_waves,
     discover_dynamic_resources, merge_discovered,
     get_tz, panel_keyboard, format_quest_notification,
-    format_daily_reward_ready, format_daily_reminder,
+    format_daily_reward_ready, format_daily_reminder, format_twitter_gift_ready,
 )
 from sfl_supabase import (
     get_all_active_users, get_user, load_state, save_state, update_user,
 )
 
-TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TG_TOKEN       = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 SHARED_API_KEY = os.environ.get("SFL_API_KEY", "").strip()
+TWITTER_TOKEN  = os.environ.get("TWITTER_BEARER_TOKEN", "").strip()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ОБРАБОТКА АЛЕРТОВ ГОТОВНОСТИ
@@ -52,6 +53,75 @@ def _dismiss_keyboard(alert_key: str) -> dict:
     return {"inline_keyboard": [[
         {"text": "❌", "callback_data": f"dismiss:{alert_key}"}
     ]]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TWITTER / X — СКАНИРОВАНИЕ ПОСТОВ
+# ══════════════════════════════════════════════════════════════════════════════
+
+_X_HASHTAGS = {
+    "#votesunflowerland",
+    "#sunflowerlandweekly",
+    "#sunflowerlandflower",
+    "#sunflowerlandfarm",
+}
+_X_MIN_TAGS = 2  # минимум совпадений для засчитывания поста
+
+
+def fetch_x_qualifying_posts(x_username: str, bearer_token: str) -> list[dict]:
+    """
+    Ищет твиты пользователя за последние 7 дней с ≥2 из 4 нужных хэштегов.
+    Возвращает список {"created_at_ms": int} или [] при ошибке/пусто.
+    """
+    if not bearer_token or not x_username:
+        return []
+    x_username = x_username.lstrip("@")
+    query = (
+        f"from:{x_username} "
+        "(#VoteSunflowerLand OR #SunflowerLandWeekly OR "
+        "#SunflowerLandFlower OR #SunflowerLandFarm)"
+    )
+    url = "https://api.twitter.com/2/tweets/search/recent"
+    params = {
+        "query": query,
+        "max_results": 10,
+        "tweet.fields": "created_at,entities",
+    }
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        if r.status_code == 401:
+            log.warning("Twitter API: неверный Bearer Token")
+            return []
+        if r.status_code == 429:
+            log.warning("Twitter API: rate limit")
+            return []
+        if r.status_code != 200:
+            log.warning(f"Twitter API: {r.status_code} {r.text[:200]}")
+            return []
+        data = r.json()
+    except Exception as e:
+        log.warning(f"Twitter API: ошибка запроса: {e}")
+        return []
+
+    qualifying = []
+    for tweet in (data.get("data") or []):
+        # Считаем хэштеги из entities
+        tags = {
+            f"#{t['tag'].lower()}"
+            for t in (tweet.get("entities") or {}).get("hashtags", [])
+        }
+        if len(tags & _X_HASHTAGS) >= _X_MIN_TAGS:
+            try:
+                dt = datetime.fromisoformat(
+                    tweet["created_at"].replace("Z", "+00:00")
+                )
+                qualifying.append({"created_at_ms": int(dt.timestamp() * 1000)})
+            except Exception:
+                pass
+    return qualifying
+
+
 
 def process_ready_alerts(chat_id: int, events: list[Event],
                          alerts_state: dict,
@@ -373,6 +443,32 @@ def scan_user(user: dict) -> "int | None":
             state["daily_reminder_hours_sent"] = _hours_sent
             state["daily_reminder_msg_id"]     = _mid or 0
             log.info(f"[{username}] Daily Rewards: напоминание {_utc_hour}:00 UTC (осталось {_hours_left}ч)")
+
+    # ── Twitter / X Gift ──────────────────────────────────────────────────────
+    _x_username = (user.get("x_username") or "").strip()
+    if _x_username and TWITTER_TOKEN:
+        _x_scanned_date = state.get("twitter_scanned_date", "")
+        # Сканируем X раз в день
+        if _today_utc_str != _x_scanned_date:
+            posts = fetch_x_qualifying_posts(_x_username, TWITTER_TOKEN)
+            if posts:
+                _latest_ms = max(p["created_at_ms"] for p in posts)
+                _stored_ms = state.get("twitter_last_post_ms", 0)
+                if _latest_ms > _stored_ms:
+                    state["twitter_last_post_ms"] = _latest_ms
+                    state["twitter_gift_notified_ms"] = 0  # сбросить: новый пост
+                    log.info(f"[{username}] Twitter: новый пост с хэштегами ({_latest_ms})")
+            state["twitter_scanned_date"] = _today_utc_str
+
+        # Прошло ли 7 дней с момента публикации?
+        _last_post_ms  = state.get("twitter_last_post_ms", 0)
+        _notified_ms   = state.get("twitter_gift_notified_ms", 0)
+        _seven_days_ms = 7 * 24 * 60 * 60 * 1000
+        if _last_post_ms and now_ms >= _last_post_ms + _seven_days_ms:
+            if _notified_ms < _last_post_ms:  # ещё не уведомляли за этот пост
+                tg_send(TG_TOKEN, telegram_id, format_twitter_gift_ready(lang=_lang))
+                state["twitter_gift_notified_ms"] = now_ms
+                log.info(f"[{username}] Twitter Gift: уведомление отправлено")
 
     save_state(telegram_id, state)
     ready_cnt = sum(1 for e in events if e.ready_count > 0)

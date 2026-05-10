@@ -919,6 +919,11 @@ _I18N = {
         "en": "🎁 <b>Daily Reward [{streaks}] available to collect!</b>",
         "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
+    "twitter_gift_ready": {
+        "ru": "🐦 <b>Twitter Gift доступен!</b>\n\nПоделись прогрессом в X (Twitter), чтобы получить награду.",
+        "en": "🐦 <b>Twitter Gift available!</b>\n\nShare your progress on X (Twitter) to claim your reward.",
+        "uk": "🐦 <b>Twitter Gift доступний!</b>\n\nПоділись прогресом у X (Twitter), щоб отримати нагороду.",
+    },
 }
 
 
@@ -1529,6 +1534,11 @@ def format_daily_reward_ready(streaks: int, lang: str = "ru") -> str:
 def format_daily_reminder(streaks: int, hours_left: int, lang: str = "ru") -> str:
     """Ежечасное напоминание в 19-23 UTC если награда не собрана."""
     return _i18n("daily_reward_reminder", lang, streaks=streaks, hours=hours_left)
+
+
+def format_twitter_gift_ready(lang: str = "ru") -> str:
+    """Уведомление: Twitter Gift доступен (прошло 7 дней с поста)."""
+    return _i18n("twitter_gift_ready", lang)
 
 
 # Алиасы для квестов с апострофом — API может вернуть любой из вариантов:
