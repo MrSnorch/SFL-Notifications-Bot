@@ -113,6 +113,7 @@ STRINGS = {
             "/stop — приостановить уведомления\n"
             "/resume — возобновить уведомления\n"
             "/lang — сменить язык\n"
+            "/reset — сбросить все данные и начать заново\n"
             "/help — это сообщение"
         ),
         "en": (
@@ -124,6 +125,7 @@ STRINGS = {
             "/stop — pause notifications\n"
             "/resume — resume notifications\n"
             "/lang — change language\n"
+            "/reset — reset all data and start over\n"
             "/help — this message"
         ),
         "uk": (
@@ -135,9 +137,27 @@ STRINGS = {
             "/stop — призупинити сповіщення\n"
             "/resume — поновити сповіщення\n"
             "/lang — змінити мову\n"
+            "/reset — скинути всі дані та почати заново\n"
             "/help — це повідомлення"
         ),
     },
+    "reset_confirm": {
+        "ru": "⚠️ <b>Полный сброс</b>\n\nЭто удалит твои данные: ферма, ключ, все настройки и состояние бота.\nПосле сброса бот запустится заново.\n\nПродолжить?",
+        "en": "⚠️ <b>Full reset</b>\n\nThis will delete your data: farm, key, all settings and bot state.\nAfter reset the bot will restart.\n\nContinue?",
+        "uk": "⚠️ <b>Повне скидання</b>\n\nЦе видалить твої дані: ферма, ключ, всі налаштування та стан бота.\nПісля скидання бот запуститься заново.\n\nПродовжити?",
+    },
+    "reset_done": {
+        "ru": "✅ Данные сброшены.",
+        "en": "✅ Data has been reset.",
+        "uk": "✅ Дані скинуто.",
+    },
+    "reset_cancel": {
+        "ru": "❌ Сброс отменён.",
+        "en": "❌ Reset cancelled.",
+        "uk": "❌ Скидання скасовано.",
+    },
+    "reset_yes_btn": {"ru": "✅ Да, сбросить", "en": "✅ Yes, reset", "uk": "✅ Так, скинути"},
+    "reset_no_btn":  {"ru": "❌ Отмена",        "en": "❌ Cancel",     "uk": "❌ Скасувати"},
     "setfarm_usage": {
         "ru": "❌ Укажи ID фермы:\n<code>/setfarm 12345</code>",
         "en": "❌ Please provide your farm ID:\n<code>/setfarm 12345</code>",
@@ -1158,6 +1178,16 @@ def handle_lang(chat_id):
 # ОБРАБОТЧИК CALLBACK (inline кнопки)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def handle_reset(chat_id):
+    user = get_user(chat_id)
+    lang = get_lang(user) if user else DEFAULT_LANG
+    keyboard = {"inline_keyboard": [[
+        {"text": t("reset_yes_btn", lang), "callback_data": "reset:confirm"},
+        {"text": t("reset_no_btn",  lang), "callback_data": "reset:cancel"},
+    ]]}
+    send_service(chat_id, t("reset_confirm", lang), reply_markup=keyboard)
+
+
 def handle_callback(callback_query):
     cq_id    = callback_query["id"]
     chat_id  = callback_query["from"]["id"]
@@ -1674,6 +1704,25 @@ def handle_callback(callback_query):
             reply_markup=twitter_gift_keyboard(tg_state, lang),
         )
 
+    elif data == "reset:confirm":
+        answer_callback(cq_id)
+        update_user(chat_id,
+            farm_id="",
+            api_key="",
+            tracking=DEFAULT_TRACKING,
+            state={},
+            active=False,
+            scanner_dispatched=False,
+        )
+        delete_msg(chat_id, msg_id)
+        send_service(chat_id, t("reset_done", lang), silent=True)
+        handle_start(chat_id, callback_query["from"])
+
+    elif data == "reset:cancel":
+        answer_callback(cq_id)
+        delete_msg(chat_id, msg_id)
+        send_service(chat_id, t("reset_cancel", lang), silent=True)
+
 
 
 
@@ -1803,6 +1852,8 @@ def dispatch(update):
         handle_resume(chat_id)
     elif cmd in ("/lang", "/language", "/setlang"):
         handle_lang(chat_id)
+    elif cmd == "/reset":
+        handle_reset(chat_id)
     elif cmd in ("/help", "/h"):
         user = get_user(chat_id)
         lang = get_lang(user)
