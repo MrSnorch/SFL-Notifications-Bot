@@ -98,7 +98,7 @@ def fetch_x_qualifying_posts(x_username: str, bearer_token: str) -> list[dict]:
             log.warning("Twitter API: rate limit (429)")
             return []
         if r.status_code != 200:
-            log.warning(f"Twitter API: {r.status_code} {r.text[:200]}")
+            log.warning(f"Twitter API: {r.status_code} {r.text}")
             return []
         data = r.json()
         log.info(f"Twitter API: ответ получен, твитов в ответе: {len(data.get('data') or [])}")
