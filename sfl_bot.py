@@ -888,7 +888,7 @@ def handle_status(chat_id):
                                              time_format=state.get("time_format", "both"),
                                              daily_info=daily_info)
         is_active    = user.get("active", True)
-        kb           = panel_keyboard(lang, is_active)
+        kb           = panel_keyboard(lang, is_active, x_username=user.get('x_username', ''))
         old_status_id = state.get("status_msg_id")
         if loading_msg_id:
             edit_text(chat_id, loading_msg_id, status_text, reply_markup=kb)
@@ -1281,7 +1281,7 @@ def handle_callback(callback_query):
             user = get_user(chat_id)
             last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
             edit_text(chat_id, msg_id, last_text,
-                      reply_markup=panel_keyboard(lang, user.get("active", True)))
+                      reply_markup=panel_keyboard(lang, user.get("active", True), x_username=user.get("x_username", "")))
         else:
             lines = [
                 f"{'✅' if tracking.get(k) else '❌'} {label}"
@@ -1396,20 +1396,28 @@ def handle_callback(callback_query):
         update_user(chat_id, active=False)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "⏸")
-        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False, x_username=user.get('x_username', '')))
 
     elif data == "panel:resume":
         update_user(chat_id, active=True)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "▶️")
-        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True, x_username=user.get('x_username', '')))
+
+    elif data == "panel:twitter_posted":
+        now_ms = int(time.time() * 1000)
+        state["twitter_last_post_ms"]    = now_ms
+        state["twitter_gift_notified_ms"] = 0
+        save_state(chat_id, state)
+        answer_callback(cq_id, t("twitter_posted_toast", lang))
+        log.info(f"[{chat_id}] Twitter Gift: пользователь нажал «Я запостил», записан timestamp {now_ms}")
 
     elif data == "panel:close":
         answer_callback(cq_id)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
         edit_text(chat_id, msg_id, last_text,
-                  reply_markup=panel_keyboard(lang, user.get("active", True)))
+                  reply_markup=panel_keyboard(lang, user.get("active", True), x_username=user.get("x_username", "")))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
