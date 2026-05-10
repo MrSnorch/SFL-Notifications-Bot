@@ -335,9 +335,9 @@ def scan_dynamic_resource(farm: dict, key: str, timer_field: str,
 
 DEFAULT_TRACKING = {
     "crops": True, "trees": True, "stones": True, "iron": True,
-    "gold": True, "crimstones": False, "oil": False, "salt": True,
-    "sunstones": False, "fruits": True, "flowers": True,
-    "honey": True, "mushrooms": False, "animals": False,
+    "gold": True, "crimstones": True, "oil": True, "salt": True,
+    "sunstones": True, "fruits": True, "flowers": True,
+    "honey": True, "mushrooms": True, "animals": True,
     "balloon": True,
     "quest": True,
 }
