@@ -919,6 +919,11 @@ _I18N = {
         "en": "🎁 <b>Daily Reward [{streaks}] available to collect!</b>",
         "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
+    "twitter_gift_ready": {
+        "ru": "🐦 <b>Twitter Gift</b> — ✅ готово к сбору!",
+        "en": "🐦 <b>Twitter Gift</b> — ✅ ready to collect!",
+        "uk": "🐦 <b>Twitter Gift</b> — ✅ готово до збору!",
+    },
 }
 
 
@@ -1095,21 +1100,11 @@ def format_status_message(events: list[Event], farm_id: str,
     if twitter_gift_info and twitter_gift_info.get("enabled"):
         _tg_last_ts = twitter_gift_info.get("last_post_ts", 0)
         if _tg_last_ts:
-            _tg_elapsed   = time.time() - _tg_last_ts
-            _tg_remaining = 604800 - _tg_elapsed  # 168h in seconds
-            if _tg_remaining <= 0:
-                lines.append("🐦 <b>Twitter Gift</b> — ✅ готово к сбору!")
+            _tg_remaining_ms = int((604800 - (time.time() - _tg_last_ts)) * 1000)
+            if _tg_remaining_ms <= 0:
+                lines.append(_i18n("twitter_gift_ready", lang))
             else:
-                _tg_d = int(_tg_remaining) // 86400
-                _tg_h = (int(_tg_remaining) % 86400) // 3600
-                _tg_m = (int(_tg_remaining) % 3600) // 60
-                if _tg_d > 0:
-                    _tg_str = f"{_tg_d}d {_tg_h}h {_tg_m}m"
-                elif _tg_h > 0:
-                    _tg_str = f"{_tg_h}h {_tg_m}m"
-                else:
-                    _tg_str = f"{_tg_m}m"
-                lines.append(f"🐦 Twitter Gift — {_tg_str}")
+                lines.append(f"🐦 Twitter Gift — {_fmt_ms_human(_tg_remaining_ms, lang)}")
 
     ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
     lines.append(_i18n("updated_at", lang, ts=ts))
