@@ -71,7 +71,7 @@ jobs:
   # Self-restart: крутимся пока полная матрица не закроет нас через per-user concurrency
   restart:
     needs: scan
-    if: always()
+    if: needs.scan.result == 'success' || needs.scan.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger next single-user run
