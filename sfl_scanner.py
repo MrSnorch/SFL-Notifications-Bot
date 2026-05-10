@@ -26,7 +26,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("SFL")
 
-from datetime import datetime, timezone as _utc_tz
+from datetime import datetime, timezone as _tz_mod
+_utc_tz = _tz_mod.utc
 from sfl_core import (
     scan_farm, load_from_api, format_status_message, format_ready_alert,
     tg_send, tg_edit, tg_delete, tg_upsert_status, tg_pin_message,
