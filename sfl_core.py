@@ -919,26 +919,6 @@ _I18N = {
         "en": "🎁 <b>Daily Reward [{streaks}] available to collect!</b>",
         "uk": "🎁 <b>Daily Reward [{streaks}] доступний до отримання!</b>",
     },
-    "twitter_posted_btn": {
-        "ru": "🐦 Я запостил в X",
-        "en": "🐦 I posted on X",
-        "uk": "🐦 Я запостив у X",
-    },
-    "twitter_posted_toast": {
-        "ru": "✅ Записано! Напомним через 7 дней.",
-        "en": "✅ Saved! We'll remind you in 7 days.",
-        "uk": "✅ Збережено! Нагадаємо через 7 днів.",
-    },
-    "twitter_gift_ready": {
-        "ru": "🐦 <b>Twitter Gift доступен!</b>\n\nПоделись прогрессом в X (Twitter), чтобы получить награду.",
-        "en": "🐦 <b>Twitter Gift available!</b>\n\nShare your progress on X (Twitter) to claim your reward.",
-        "uk": "🐦 <b>Twitter Gift доступний!</b>\n\nПоділись прогресом у X (Twitter), щоб отримати нагороду.",
-    },
-    "twitter_status_available": {
-        "ru": "🐦 <b>Twitter Gift доступен к получению!</b>",
-        "en": "🐦 <b>Twitter Gift available to collect!</b>",
-        "uk": "🐦 <b>Twitter Gift доступний до отримання!</b>",
-    },
 }
 
 
@@ -1011,8 +991,7 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru",
                            time_format: str = "both",
-                           daily_info: dict | None = None,
-                           twitter_info: dict | None = None) -> str:
+                           daily_info: dict | None = None) -> str:
     # time_format: "both" = countdown + clock, "countdown" = countdown only, "clock" = clock only
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
@@ -1045,27 +1024,6 @@ def format_status_message(events: list[Event], farm_id: str,
         else:
             # Награда доступна к получению
             lines.append(_i18n("daily_status_available", lang, streaks=_streaks))
-
-    if twitter_info is not None:
-        _last_post_ms  = twitter_info.get("last_post_ms", 0)
-        _seven_days_ms = 7 * 24 * 60 * 60 * 1000
-        if _last_post_ms:
-            _gift_ready_ms = _last_post_ms + _seven_days_ms
-            if now_ms >= _gift_ready_ms:
-                # Gift доступен
-                lines.append(_i18n("twitter_status_available", lang))
-            else:
-                # Обратный отсчёт до готовности
-                ms_left = _gift_ready_ms - now_ms
-                if time_format == "clock":
-                    time_str = datetime.fromtimestamp(_gift_ready_ms / 1000, tz=_tz).strftime("%H:%M")
-                elif time_format == "countdown":
-                    time_str = _fmt_ms_human(ms_left, lang)
-                else:  # both
-                    clock = datetime.fromtimestamp(_gift_ready_ms / 1000, tz=_tz).strftime("%H:%M")
-                    time_str = f"{_fmt_ms_human(ms_left, lang)} — {clock}"
-                display_items.append((_gift_ready_ms,
-                    f"🐦 <b>Twitter Gift</b> — {time_str}"))
 
     if not pending and not display_items:
         lines.append(_i18n("all_ready", lang))
@@ -1573,11 +1531,6 @@ def format_daily_reminder(streaks: int, hours_left: int, lang: str = "ru") -> st
     return _i18n("daily_reward_reminder", lang, streaks=streaks, hours=hours_left)
 
 
-def format_twitter_gift_ready(lang: str = "ru") -> str:
-    """Уведомление: Twitter Gift доступен (прошло 7 дней с поста)."""
-    return _i18n("twitter_gift_ready", lang)
-
-
 # Алиасы для квестов с апострофом — API может вернуть любой из вариантов:
 # без апострофа (основной), с апострофом, или апостроф → дефис.
 QUEST_DATA["bard's-visit"] = QUEST_DATA['bards-visit']
@@ -1670,7 +1623,7 @@ def tg_send(token: str, chat_id: int, text: str,
         log.warning(f"tg_send error: {e}")
     return None
 
-def panel_keyboard(lang: str, is_active: bool, x_username: str = "") -> dict:
+def panel_keyboard(lang: str, is_active: bool) -> dict:
     """Inline-клавиатура «живого пульта» для закреплённого статус-сообщения."""
     labels = {
         "settings": {"ru": "⚙️ Настройки",  "en": "⚙️ Settings",  "uk": "⚙️ Налаштування"},
@@ -1684,14 +1637,11 @@ def panel_keyboard(lang: str, is_active: bool, x_username: str = "") -> dict:
         if is_active else
         {"text": L("resume"), "callback_data": "panel:resume"}
     )
-    rows = [
+    return {"inline_keyboard": [
         [{"text": L("settings"), "callback_data": "panel:settings"}],
         [toggle],
         [{"text": L("lang"),     "callback_data": "panel:lang"}],
-    ]
-    if x_username:
-        rows.append([{"text": _i18n("twitter_posted_btn", lang), "callback_data": "panel:twitter_posted"}])
-    return {"inline_keyboard": rows}
+    ]}
 
 
 def tg_edit(token: str, chat_id: int, message_id: int, text: str,

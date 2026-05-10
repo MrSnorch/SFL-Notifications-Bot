@@ -258,26 +258,6 @@ STRINGS = {
         "en": "❌ Farm ID must be a number. Try again:",
         "uk": "❌ ID ферми має бути числом. Спробуй ще раз:",
     },
-    "setx_btn": {
-        "ru": "🐦 X (Twitter): {handle}",
-        "en": "🐦 X (Twitter): {handle}",
-        "uk": "🐦 X (Twitter): {handle}",
-    },
-    "setx_prompt": {
-        "ru": "🐦 <b>Укажи X (Twitter) аккаунт</b>\n\nТекущий: <code>{handle}</code>\n\nОтправь @username (или username без @):",
-        "en": "🐦 <b>Set X (Twitter) account</b>\n\nCurrent: <code>{handle}</code>\n\nSend @username (or username without @):",
-        "uk": "🐦 <b>Вкажи X (Twitter) акаунт</b>\n\nПоточний: <code>{handle}</code>\n\nНадішли @username (або username без @):",
-    },
-    "setx_saved": {
-        "ru": "✅ X аккаунт сохранён: <b>@{handle}</b>\n\nБот будет проверять посты раз в день и уведомит через 7 дней после публикации.",
-        "en": "✅ X account saved: <b>@{handle}</b>\n\nThe bot will check posts once a day and notify you 7 days after publishing.",
-        "uk": "✅ X акаунт збережено: <b>@{handle}</b>\n\nБот перевірятиме пости раз на день і повідомить через 7 днів після публікації.",
-    },
-    "setx_cancel": {
-        "ru": "❌ Отмена",
-        "en": "❌ Cancel",
-        "uk": "❌ Скасувати",
-    },
     "settings_unknown_resource": {
         "ru": "Неизвестный ресурс",
         "en": "Unknown resource",
@@ -718,7 +698,7 @@ def repeat_resource_keyboard(lang: str, resource_key: str,
 
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       repeat_count=3, repeat_interval_min=10, farm_id="?",
-                      time_format="both", x_username=""):
+                      time_format="both"):
     """Inline-клавиатура для /settings."""
     buttons = []
     for key, label in TRACK_LABELS:
@@ -747,11 +727,6 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     buttons.append([{
         "text": t("setfarm_btn_change", lang, farm_id=farm_id),
         "callback_data": "setfarm_prompt",
-    }])
-    x_handle = f"@{x_username}" if x_username else "—"
-    buttons.append([{
-        "text": t("setx_btn", lang, handle=x_handle),
-        "callback_data": "setx_prompt",
     }])
     tf_label = t(f"time_format_{time_format}", lang)
     buttons.append([{
@@ -847,7 +822,7 @@ def handle_settings(chat_id):
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                         repeat_count, repeat_interval,
                                         farm_id=user.get("farm_id", "?"),
-                                        time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")))
+                                        time_format=state.get("time_format", "both")))
 
 
 def handle_status(chat_id):
@@ -888,7 +863,7 @@ def handle_status(chat_id):
                                              time_format=state.get("time_format", "both"),
                                              daily_info=daily_info)
         is_active    = user.get("active", True)
-        kb           = panel_keyboard(lang, is_active, x_username=user.get('x_username', ''))
+        kb           = panel_keyboard(lang, is_active)
         old_status_id = state.get("status_msg_id")
         if loading_msg_id:
             edit_text(chat_id, loading_msg_id, status_text, reply_markup=kb)
@@ -1002,7 +977,7 @@ def handle_callback(callback_query):
                 reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                                _repeat_count, _repeat_intv,
                                                farm_id=user.get("farm_id", "?"),
-                                               time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")),
+                                               time_format=state.get("time_format", "both")),
             )
         else:
             answer_callback(cq_id, t("settings_unknown_resource", lang))
@@ -1041,7 +1016,7 @@ def handle_callback(callback_query):
                                                int(repeat.get("count", 1)),
                                                int(repeat.get("interval_min", 10)),
                                                farm_id=user.get("farm_id", "?"),
-                                               time_format=new_tf, x_username=user.get("x_username", "")),
+                                               time_format=new_tf),
             )
 
     elif data.startswith("set_tz:"):
@@ -1057,7 +1032,7 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data.startswith("repeat_count:"):
@@ -1271,7 +1246,7 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data == "settings:close":
@@ -1281,7 +1256,7 @@ def handle_callback(callback_query):
             user = get_user(chat_id)
             last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
             edit_text(chat_id, msg_id, last_text,
-                      reply_markup=panel_keyboard(lang, user.get("active", True), x_username=user.get("x_username", "")))
+                      reply_markup=panel_keyboard(lang, user.get("active", True)))
         else:
             lines = [
                 f"{'✅' if tracking.get(k) else '❌'} {label}"
@@ -1332,40 +1307,7 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")),
-        )
-
-    elif data == "setx_prompt":
-        answer_callback(cq_id)
-        state["awaiting"] = "x_username"
-        state["awaiting_msg_id"] = msg_id
-        update_user(chat_id, state=state)
-        current_handle = user.get("x_username") or "—"
-        edit_text(
-            chat_id, msg_id,
-            t("setx_prompt", lang, handle=current_handle),
-            reply_markup={"inline_keyboard": [[{
-                "text": t("setx_cancel", lang),
-                "callback_data": "setx_cancel",
-            }]]},
-        )
-
-    elif data == "setx_cancel":
-        answer_callback(cq_id)
-        state.pop("awaiting", None)
-        state.pop("awaiting_msg_id", None)
-        update_user(chat_id, state=state)
-        user = get_user(chat_id)
-        repeat = state.get("repeat", {})
-        edit_text(
-            chat_id, msg_id,
-            t("settings_title", lang),
-            reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
-                                           int(repeat.get("count", 1)),
-                                           int(repeat.get("interval_min", 10)),
-                                           farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both"),
-                                           x_username=user.get("x_username", "")),
+                                           time_format=state.get("time_format", "both")),
         )
 
     # ── Кнопки панели управления (в закреплённом сообщении) ──────────────────
@@ -1380,7 +1322,7 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both"), x_username=user.get("x_username", "")),
+                                           time_format=state.get("time_format", "both")),
         )
 
     elif data == "panel:lang":
@@ -1396,28 +1338,20 @@ def handle_callback(callback_query):
         update_user(chat_id, active=False)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "⏸")
-        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False, x_username=user.get('x_username', '')))
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
 
     elif data == "panel:resume":
         update_user(chat_id, active=True)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "▶️")
-        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True, x_username=user.get('x_username', '')))
-
-    elif data == "panel:twitter_posted":
-        now_ms = int(time.time() * 1000)
-        state["twitter_last_post_ms"]    = now_ms
-        state["twitter_gift_notified_ms"] = 0
-        save_state(chat_id, state)
-        answer_callback(cq_id, t("twitter_posted_toast", lang))
-        log.info(f"[{chat_id}] Twitter Gift: пользователь нажал «Я запостил», записан timestamp {now_ms}")
+        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
 
     elif data == "panel:close":
         answer_callback(cq_id)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
         edit_text(chat_id, msg_id, last_text,
-                  reply_markup=panel_keyboard(lang, user.get("active", True), x_username=user.get("x_username", "")))
+                  reply_markup=panel_keyboard(lang, user.get("active", True)))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1488,40 +1422,11 @@ def dispatch(update):
                             int(repeat.get("interval_min", 10)),
                             farm_id=text,
                             time_format=state.get("time_format", "both"),
-                            x_username=user.get("x_username", ""),
                         ),
                     )
                 return
 
-            elif state.get("awaiting") == "x_username":
-                lang = get_lang(user)
-                prompt_msg_id = state.get("awaiting_msg_id")
-                delete_msg(chat_id, message_id)
-                handle = text.lstrip("@").strip()
-                # Сохраняем x_username
-                update_user(chat_id, x_username=handle)
-                state.pop("awaiting", None)
-                state.pop("awaiting_msg_id", None)
-                update_user(chat_id, state=state)
-                user = get_user(chat_id)
-                tracking          = user.get("tracking") or DEFAULT_TRACKING
-                dynamic_resources = state.get("discovered_resources", [])
-                current_tz        = state.get("timezone")
-                repeat            = state.get("repeat", {})
-                if prompt_msg_id:
-                    edit_text(
-                        chat_id, prompt_msg_id,
-                        t("settings_title", lang) + "\n\n" + t("setx_saved", lang, handle=handle),
-                        reply_markup=settings_keyboard(
-                            tracking, dynamic_resources, current_tz, lang,
-                            int(repeat.get("count", 1)),
-                            int(repeat.get("interval_min", 10)),
-                            farm_id=user.get("farm_id", "?"),
-                            time_format=state.get("time_format", "both"),
-                            x_username=handle,
-                        ),
-                    )
-                return
+    cmd = text.split()[0].lower().split("@")[0]
 
     if cmd == "/start":
         handle_start(chat_id, user_from)

@@ -11,9 +11,6 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT    DEFAULT '',
     first_name    TEXT    DEFAULT '',
 
-    -- X (Twitter) аккаунт для отслеживания Share & Earn
-    x_username    TEXT    DEFAULT '',
-
     -- Настройки фермы
     farm_id       TEXT    DEFAULT '',
     api_key       TEXT    DEFAULT '',   -- шифруем на уровне Row Security
@@ -77,7 +74,6 @@ CREATE INDEX IF NOT EXISTS idx_users_pending_dispatch ON users(active, scanner_d
 -- ============================================================
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS scanner_dispatched BOOLEAN DEFAULT FALSE;
 -- UPDATE users SET scanner_dispatched = TRUE WHERE active = TRUE;
--- ALTER TABLE users ADD COLUMN IF NOT EXISTS x_username TEXT DEFAULT '';
 
 -- ============================================================
 -- Row Level Security
