@@ -991,7 +991,8 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru",
                            time_format: str = "both",
-                           daily_info: dict | None = None) -> str:
+                           daily_info: dict | None = None,
+                           twitter_gift_info: dict | None = None) -> str:
     # time_format: "both" = countdown + clock, "countdown" = countdown only, "clock" = clock only
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
@@ -1089,6 +1090,26 @@ def format_status_message(events: list[Event], farm_id: str,
         lines.append(_i18n("ready_skills_section", lang))
         for e in ready_skills:
             lines.append(f"  {e.emoji} {e.name}")
+
+    # ── Twitter Gift countdown ────────────────────────────────────────────────
+    if twitter_gift_info and twitter_gift_info.get("enabled"):
+        _tg_last_ts = twitter_gift_info.get("last_post_ts", 0)
+        if _tg_last_ts:
+            _tg_elapsed   = time.time() - _tg_last_ts
+            _tg_remaining = 604800 - _tg_elapsed  # 168h in seconds
+            if _tg_remaining <= 0:
+                lines.append("🐦 <b>Twitter Gift</b> — ✅ готово к сбору!")
+            else:
+                _tg_d = int(_tg_remaining) // 86400
+                _tg_h = (int(_tg_remaining) % 86400) // 3600
+                _tg_m = (int(_tg_remaining) % 3600) // 60
+                if _tg_d > 0:
+                    _tg_str = f"{_tg_d}d {_tg_h}h {_tg_m}m"
+                elif _tg_h > 0:
+                    _tg_str = f"{_tg_h}h {_tg_m}m"
+                else:
+                    _tg_str = f"{_tg_m}m"
+                lines.append(f"🐦 Twitter Gift — {_tg_str}")
 
     ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
     lines.append(_i18n("updated_at", lang, ts=ts))

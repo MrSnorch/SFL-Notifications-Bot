@@ -438,6 +438,129 @@ STRINGS = {
         "en": "Please /start first",
         "uk": "Спочатку /start",
     },
+
+    # ── Twitter Gift ────────────────────────────────────────────────────────
+    "twitter_gift_btn": {
+        "ru": "🐦 Twitter Gift",
+        "en": "🐦 Twitter Gift",
+        "uk": "🐦 Twitter Gift",
+    },
+    "twitter_gift_title": {
+        "ru": (
+            "🐦 <b>Twitter Gift</b>\n\n"
+            "Делай твит каждые 7 дней и получай награду в игре!\n\n"
+            "{status}"
+        ),
+        "en": (
+            "🐦 <b>Twitter Gift</b>\n\n"
+            "Post on Twitter every 7 days and earn in-game rewards!\n\n"
+            "{status}"
+        ),
+        "uk": (
+            "🐦 <b>Twitter Gift</b>\n\n"
+            "Роби твіт кожні 7 днів та отримуй нагороду в грі!\n\n"
+            "{status}"
+        ),
+    },
+    "twitter_gift_status_disabled": {
+        "ru": "❌ <b>Статус:</b> отключено",
+        "en": "❌ <b>Status:</b> disabled",
+        "uk": "❌ <b>Статус:</b> вимкнено",
+    },
+    "twitter_gift_status_no_post": {
+        "ru": "⚠️ <b>Статус:</b> включено, но дата последнего поста не задана\n\nНажми «📅 Задать дату последнего поста» чтобы начать отсчёт.",
+        "en": "⚠️ <b>Status:</b> enabled, but last post date is not set\n\nPress «📅 Set last post date» to start the timer.",
+        "uk": "⚠️ <b>Статус:</b> увімкнено, але дата останнього посту не задана\n\nНатисни «📅 Задати дату останнього посту» щоб почати відлік.",
+    },
+    "twitter_gift_status_ready": {
+        "ru": "✅ <b>Статус:</b> <b>ГОТОВО К СБОРУ!</b>\n\nНажми «✅ Выполнено» после публикации твита.",
+        "en": "✅ <b>Status:</b> <b>READY TO COLLECT!</b>\n\nPress «✅ Done» after posting your tweet.",
+        "uk": "✅ <b>Статус:</b> <b>ГОТОВО ДО ЗБОРУ!</b>\n\nНатисни «✅ Виконано» після публікації твіту.",
+    },
+    "twitter_gift_status_countdown": {
+        "ru": "⏳ <b>Статус:</b> следующий твит через <b>{countdown}</b>\n\nПоследний пост: {last_post}",
+        "en": "⏳ <b>Status:</b> next tweet in <b>{countdown}</b>\n\nLast post: {last_post}",
+        "uk": "⏳ <b>Статус:</b> наступний твіт через <b>{countdown}</b>\n\nОстанній пост: {last_post}",
+    },
+    "twitter_gift_btn_enable": {
+        "ru": "✅ Включить",
+        "en": "✅ Enable",
+        "uk": "✅ Увімкнути",
+    },
+    "twitter_gift_btn_disable": {
+        "ru": "❌ Отключить",
+        "en": "❌ Disable",
+        "uk": "❌ Вимкнути",
+    },
+    "twitter_gift_btn_done": {
+        "ru": "✅ Выполнено (сброс таймера)",
+        "en": "✅ Done (reset timer)",
+        "uk": "✅ Виконано (скинути таймер)",
+    },
+    "twitter_gift_btn_set_time": {
+        "ru": "📅 Задать дату последнего поста",
+        "en": "📅 Set last post date",
+        "uk": "📅 Задати дату останнього посту",
+    },
+    "twitter_gift_done_toast": {
+        "ru": "✅ Таймер сброшен! Следующий твит через 7 дней.",
+        "en": "✅ Timer reset! Next tweet in 7 days.",
+        "uk": "✅ Таймер скинуто! Наступний твіт через 7 днів.",
+    },
+    "twitter_gift_enabled_toast": {
+        "ru": "🐦 Twitter Gift включён",
+        "en": "🐦 Twitter Gift enabled",
+        "uk": "🐦 Twitter Gift увімкнено",
+    },
+    "twitter_gift_disabled_toast": {
+        "ru": "🐦 Twitter Gift отключён",
+        "en": "🐦 Twitter Gift disabled",
+        "uk": "🐦 Twitter Gift вимкнено",
+    },
+    "twitter_gift_set_time_prompt": {
+        "ru": (
+            "📅 <b>Дата и время последнего твита</b>\n\n"
+            "Введи дату и время в формате:\n"
+            "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
+            "Примеры:\n"
+            "<code>07.05.2026 04:07</code>\n"
+            "<code>2026-05-07 04:07</code>\n\n"
+            "Время вводится в <b>UTC</b>."
+        ),
+        "en": (
+            "📅 <b>Last tweet date and time</b>\n\n"
+            "Enter the date and time in format:\n"
+            "<code>DD.MM.YYYY HH:MM</code>\n\n"
+            "Examples:\n"
+            "<code>07.05.2026 04:07</code>\n"
+            "<code>2026-05-07 04:07</code>\n\n"
+            "Time is in <b>UTC</b>."
+        ),
+        "uk": (
+            "📅 <b>Дата і час останнього твіту</b>\n\n"
+            "Введи дату і час у форматі:\n"
+            "<code>ДД.ММ.РРРР ГГ:ХХ</code>\n\n"
+            "Приклади:\n"
+            "<code>07.05.2026 04:07</code>\n"
+            "<code>2026-05-07 04:07</code>\n\n"
+            "Час вказується в <b>UTC</b>."
+        ),
+    },
+    "twitter_gift_set_time_invalid": {
+        "ru": "❌ Не удалось распознать дату. Попробуй ещё раз:\n<code>07.05.2026 04:07</code> или <code>2026-05-07 04:07</code>",
+        "en": "❌ Could not parse the date. Try again:\n<code>07.05.2026 04:07</code> or <code>2026-05-07 04:07</code>",
+        "uk": "❌ Не вдалось розпізнати дату. Спробуй ще раз:\n<code>07.05.2026 04:07</code> або <code>2026-05-07 04:07</code>",
+    },
+    "twitter_gift_set_time_ok": {
+        "ru": "✅ Дата сохранена! Отсчёт начался.",
+        "en": "✅ Date saved! Timer started.",
+        "uk": "✅ Дату збережено! Відлік розпочато.",
+    },
+    "twitter_gift_btn_cancel": {
+        "ru": "❌ Отмена",
+        "en": "❌ Cancel",
+        "uk": "❌ Скасувати",
+    },
 }
 
 
@@ -734,10 +857,113 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
         "callback_data": "time_format_menu",
     }])
     buttons.append([{
+        "text": t("twitter_gift_btn", lang),
+        "callback_data": "twitter_gift:open",
+    }])
+    buttons.append([{
         "text": t("settings_btn_save", lang),
         "callback_data": "settings:close",
     }])
     return {"inline_keyboard": buttons}
+
+
+# ── Twitter Gift helpers ───────────────────────────────────────────────────
+
+TWITTER_GIFT_PERIOD = 168 * 3600  # 7 days in seconds
+
+
+def _parse_tweet_datetime(text: str):
+    """Parse user-entered date/time string, return UTC unix timestamp or None."""
+    from datetime import datetime as _dt, timezone as _tz
+    text = text.strip()
+    formats = [
+        "%d.%m.%Y %H:%M",
+        "%Y-%m-%d %H:%M",
+        "%d.%m.%Y %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%d/%m/%Y %H:%M",
+    ]
+    for fmt in formats:
+        try:
+            dt = _dt.strptime(text, fmt)
+            return int(dt.replace(tzinfo=_tz.utc).timestamp())
+        except ValueError:
+            pass
+    return None
+
+
+def _fmt_twitter_countdown(seconds_left: int, lang: str) -> str:
+    """Format seconds remaining as Xd Xh Xm."""
+    seconds_left = max(0, int(seconds_left))
+    d = seconds_left // 86400
+    h = (seconds_left % 86400) // 3600
+    m = (seconds_left % 3600) // 60
+    if d > 0:
+        return f"{d}d {h}h {m}m"
+    elif h > 0:
+        return f"{h}h {m}m"
+    else:
+        return f"{m}m"
+
+
+def _twitter_gift_status_text(tg_state: dict, lang: str) -> str:
+    """Return status string for Twitter Gift menu."""
+    import time as _time
+    from datetime import datetime as _dt, timezone as _tz
+    enabled = tg_state.get("enabled", False)
+    last_ts = tg_state.get("last_post_ts", 0)
+    if not enabled:
+        return t("twitter_gift_status_disabled", lang)
+    if not last_ts:
+        return t("twitter_gift_status_no_post", lang)
+    elapsed = _time.time() - last_ts
+    remaining = TWITTER_GIFT_PERIOD - elapsed
+    if remaining <= 0:
+        return t("twitter_gift_status_ready", lang)
+    last_dt = _dt.fromtimestamp(last_ts, tz=_tz.utc).strftime("%d.%m.%Y %H:%M UTC")
+    return t("twitter_gift_status_countdown", lang,
+             countdown=_fmt_twitter_countdown(remaining, lang),
+             last_post=last_dt)
+
+
+def twitter_gift_keyboard(tg_state: dict, lang: str) -> dict:
+    """Inline keyboard for Twitter Gift settings screen."""
+    import time as _time
+    enabled = tg_state.get("enabled", False)
+    last_ts = tg_state.get("last_post_ts", 0)
+    buttons = []
+    if enabled:
+        elapsed = _time.time() - last_ts if last_ts else TWITTER_GIFT_PERIOD + 1
+        remaining = TWITTER_GIFT_PERIOD - elapsed
+        if remaining <= 0 and last_ts:
+            buttons.append([{
+                "text": t("twitter_gift_btn_done", lang),
+                "callback_data": "twitter_gift:done",
+            }])
+        buttons.append([{
+            "text": t("twitter_gift_btn_set_time", lang),
+            "callback_data": "twitter_gift:set_time",
+        }])
+        buttons.append([{
+            "text": t("twitter_gift_btn_disable", lang),
+            "callback_data": "twitter_gift:toggle",
+        }])
+    else:
+        buttons.append([{
+            "text": t("twitter_gift_btn_enable", lang),
+            "callback_data": "twitter_gift:toggle",
+        }])
+        buttons.append([{
+            "text": t("twitter_gift_btn_set_time", lang),
+            "callback_data": "twitter_gift:set_time",
+        }])
+    buttons.append([{
+        "text": t("settings_btn_back", lang),
+        "callback_data": "settings:open",
+    }])
+    return {"inline_keyboard": buttons}
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ОБРАБОТЧИКИ КОМАНД
@@ -859,9 +1085,13 @@ def handle_status(chat_id):
         _collected   = (bool(_dr_collected_ms) and
                         datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz).strftime("%Y-%m-%d") == _today_str)
         daily_info   = {"streaks": _dr.get("streaks", 0), "collected_today": _collected}
+        _tg_state    = state.get("twitter_gift") or {}
+        twitter_gift_info = {"enabled": _tg_state.get("enabled", False),
+                             "last_post_ts": _tg_state.get("last_post_ts", 0)}
         status_text  = format_status_message(events, user["farm_id"], tz=user_tz,
                                              time_format=state.get("time_format", "both"),
-                                             daily_info=daily_info)
+                                             daily_info=daily_info,
+                                             twitter_gift_info=twitter_gift_info)
         is_active    = user.get("active", True)
         kb           = panel_keyboard(lang, is_active)
         old_status_id = state.get("status_msg_id")
@@ -1353,6 +1583,82 @@ def handle_callback(callback_query):
         edit_text(chat_id, msg_id, last_text,
                   reply_markup=panel_keyboard(lang, user.get("active", True)))
 
+    # ── Twitter Gift ────────────────────────────────────────────────────────
+
+    elif data == "twitter_gift:open":
+        answer_callback(cq_id)
+        tg_state = state.get("twitter_gift") or {}
+        status   = _twitter_gift_status_text(tg_state, lang)
+        edit_text(
+            chat_id, msg_id,
+            t("twitter_gift_title", lang, status=status),
+            reply_markup=twitter_gift_keyboard(tg_state, lang),
+        )
+
+    elif data == "twitter_gift:toggle":
+        tg_state = state.get("twitter_gift") or {}
+        enabled  = tg_state.get("enabled", False)
+        tg_state["enabled"] = not enabled
+        state["twitter_gift"] = tg_state
+        update_user(chat_id, state=state)
+        toast = (
+            t("twitter_gift_enabled_toast", lang)
+            if not enabled else
+            t("twitter_gift_disabled_toast", lang)
+        )
+        answer_callback(cq_id, toast)
+        status = _twitter_gift_status_text(tg_state, lang)
+        edit_text(
+            chat_id, msg_id,
+            t("twitter_gift_title", lang, status=status),
+            reply_markup=twitter_gift_keyboard(tg_state, lang),
+        )
+
+    elif data == "twitter_gift:done":
+        import time as _time
+        tg_state = state.get("twitter_gift") or {}
+        tg_state["last_post_ts"] = int(_time.time())
+        tg_state["notified"]     = False
+        tg_state["notify_msg_id"] = 0
+        state["twitter_gift"] = tg_state
+        update_user(chat_id, state=state)
+        answer_callback(cq_id, t("twitter_gift_done_toast", lang))
+        status = _twitter_gift_status_text(tg_state, lang)
+        edit_text(
+            chat_id, msg_id,
+            t("twitter_gift_title", lang, status=status),
+            reply_markup=twitter_gift_keyboard(tg_state, lang),
+        )
+
+    elif data == "twitter_gift:set_time":
+        answer_callback(cq_id)
+        state["awaiting"]     = "twitter_post_time"
+        state["awaiting_msg_id"] = msg_id
+        update_user(chat_id, state=state)
+        edit_text(
+            chat_id, msg_id,
+            t("twitter_gift_set_time_prompt", lang),
+            reply_markup={"inline_keyboard": [[{
+                "text": t("twitter_gift_btn_cancel", lang),
+                "callback_data": "twitter_gift:cancel_set",
+            }]]},
+        )
+
+    elif data == "twitter_gift:cancel_set":
+        answer_callback(cq_id)
+        state.pop("awaiting", None)
+        state.pop("awaiting_msg_id", None)
+        update_user(chat_id, state=state)
+        tg_state = state.get("twitter_gift") or {}
+        status   = _twitter_gift_status_text(tg_state, lang)
+        edit_text(
+            chat_id, msg_id,
+            t("twitter_gift_title", lang, status=status),
+            reply_markup=twitter_gift_keyboard(tg_state, lang),
+        )
+
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ДИСПЕТЧЕР ОБНОВЛЕНИЙ
@@ -1423,6 +1729,41 @@ def dispatch(update):
                             farm_id=text,
                             time_format=state.get("time_format", "both"),
                         ),
+                    )
+                return
+
+            elif state.get("awaiting") == "twitter_post_time":
+                lang          = get_lang(user)
+                prompt_msg_id = state.get("awaiting_msg_id")
+                delete_msg(chat_id, message_id)
+                ts = _parse_tweet_datetime(text)
+                if ts is None:
+                    if prompt_msg_id:
+                        edit_text(
+                            chat_id, prompt_msg_id,
+                            t("twitter_gift_set_time_invalid", lang),
+                            reply_markup={"inline_keyboard": [[{
+                                "text": t("twitter_gift_btn_cancel", lang),
+                                "callback_data": "twitter_gift:cancel_set",
+                            }]]},
+                        )
+                    return
+                # Сохраняем timestamp и включаем Twitter Gift если ещё не включён
+                tg_state = state.get("twitter_gift") or {}
+                tg_state["last_post_ts"]  = ts
+                tg_state["enabled"]       = True
+                tg_state["notified"]      = False
+                tg_state["notify_msg_id"] = 0
+                state["twitter_gift"] = tg_state
+                state.pop("awaiting", None)
+                state.pop("awaiting_msg_id", None)
+                update_user(chat_id, state=state)
+                status = _twitter_gift_status_text(tg_state, lang)
+                if prompt_msg_id:
+                    edit_text(
+                        chat_id, prompt_msg_id,
+                        t("twitter_gift_title", lang, status=status),
+                        reply_markup=twitter_gift_keyboard(tg_state, lang),
                     )
                 return
 

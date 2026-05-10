@@ -265,11 +265,44 @@ def scan_user(user: dict) -> "int | None":
     _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
     daily_info = {"streaks": _dr_next_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
+    # ── Twitter Gift ──────────────────────────────────────────────────────────
+    _tg_state     = state.get("twitter_gift") or {}
+    _tg_enabled   = _tg_state.get("enabled", False)
+    _tg_last_ts   = _tg_state.get("last_post_ts", 0)
+    twitter_gift_info = {"enabled": _tg_enabled, "last_post_ts": _tg_last_ts}
+
+    # Уведомление о готовности Twitter Gift
+    if _tg_enabled and _tg_last_ts:
+        _tg_elapsed   = time.time() - _tg_last_ts
+        _tg_remaining = 604800 - _tg_elapsed  # 168h
+        _tg_notified  = _tg_state.get("notified", False)
+        if _tg_remaining <= 0 and not _tg_notified:
+            _tg_done_kb = {"inline_keyboard": [[
+                {"text": "✅ Выполнено" if state.get("lang", "ru") == "ru"
+                          else ("✅ Виконано" if state.get("lang") == "uk" else "✅ Done"),
+                 "callback_data": "twitter_gift:done"}
+            ]]}
+            _tg_notify_text = "🐦 <b>Twitter Gift</b> — готово к сбору ✅\n\nНажми кнопку после публикации твита, чтобы запустить таймер заново."
+            _lang_now = state.get("lang", "ru")
+            if _lang_now == "en":
+                _tg_notify_text = "🐦 <b>Twitter Gift</b> — ready to collect ✅\n\nPress the button after posting your tweet to restart the timer."
+            elif _lang_now == "uk":
+                _tg_notify_text = "🐦 <b>Twitter Gift</b> — готово до збору ✅\n\nНатисни кнопку після публікації твіту, щоб перезапустити таймер."
+            _old_notify_mid = _tg_state.get("notify_msg_id", 0)
+            if _old_notify_mid:
+                tg_delete(TG_TOKEN, telegram_id, _old_notify_mid)
+            _new_notify_mid = tg_send(TG_TOKEN, telegram_id, _tg_notify_text, reply_markup=_tg_done_kb)
+            _tg_state["notified"]      = True
+            _tg_state["notify_msg_id"] = _new_notify_mid or 0
+            state["twitter_gift"] = _tg_state
+            log.info(f"[{username}] 🐦 Twitter Gift: таймер истёк — уведомление отправлено")
+
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
     status_text = format_status_message(events, farm_id, tz=user_tz,
                                         time_format=state.get("time_format", "both"),
-                                        daily_info=daily_info)
+                                        daily_info=daily_info,
+                                        twitter_gift_info=twitter_gift_info)
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
