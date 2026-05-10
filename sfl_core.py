@@ -566,7 +566,9 @@ def scan_farm(farm: dict, track: dict,
         total = len(nodes)
         if total:
             rc = sa_stored + sum(1 for t in sa_ready if t <= now_ms)
-            earliest = min(sa_ready) if sa_ready else now_ms
+            # Если sa_ready пуст, значит все узлы уже имеют storedCharges (готовы к сбору).
+            # Используем 0 как стабильный анкор, чтобы ключ алерта не менялся между сканами.
+            earliest = min(sa_ready) if sa_ready else 0
             events.append(Event("Salt", "🧂", earliest, total, rc,
                 f"{rc}/{total} готово" if rc else f"{total} узл.",
                 resource_key="salt"))
@@ -727,7 +729,7 @@ def scan_farm(farm: dict, track: dict,
         for atype, times in ag.items():
             times.sort()
             rc = sum(1 for t in times if t == 0 or t <= now_ms)
-            first = min(t for t in times if t > 0) if any(t > 0 for t in times) else now_ms
+            first = min(t for t in times if t > 0) if any(t > 0 for t in times) else 0
             emoji = "🐄" if "Cow" in atype else "🐔"
             last_at = max((t for t in times if t > 0), default=now_ms)
             events.append(Event(atype, emoji, first, len(times), rc,
@@ -885,9 +887,9 @@ _I18N = {
         "uk": "❤️ <b>Шарик прилетів!</b>{until}",
     },
     "balloon_until": {
-        "ru": " Улетает в {clock}",
-        "en": " Leaves at {clock}",
-        "uk": " Відлітає о {clock}",
+        "ru": " Успей слетать до {clock}!",
+        "en": " Hurry, leaves at {clock}!",
+        "uk": " Встигни злітати до {clock}!",
     },
     "quest_arrived": {
         "ru": "📜 <b>Новый Quest доступен!</b>",
@@ -1099,9 +1101,11 @@ def format_status_message(events: list[Event], farm_id: str,
         for e in ready_resources:
             cnt = f" [{e.ready_count}/{e.count}]" if e.count > 1 else ""
             if e.resource_key == "balloon" and e.last_ready_at_ms:
+                start_clock = datetime.fromtimestamp(
+                    e.ready_at_ms / 1000, tz=_tz).strftime("%H:%M")
                 end_clock = datetime.fromtimestamp(
                     e.last_ready_at_ms / 1000, tz=_tz).strftime("%H:%M")
-                lines.append(f"  {e.emoji} {e.name}{cnt} (до {end_clock})")
+                lines.append(f"  {e.emoji}{e.name} — {start_clock} – {end_clock}")
             else:
                 lines.append(f"  {e.emoji} {e.name}{cnt}")
         if _tg_is_ready:
