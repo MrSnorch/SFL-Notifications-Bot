@@ -1524,7 +1524,7 @@ def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
         if len(parts) == 2:
             data = QUEST_DATA.get(parts[0] + "s-" + parts[1])
 
-    header = "🎁 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot\">Pumpkin Pete</a>"
+    header = "🎁 <b>Новый Quest</b>  <a href=\"https://t.me/pumpkin_pete_bot?start=MrSnorch\">Pumpkin Pete</a>"
 
     if not data:
         # Quest неизвестен — показываем имя как есть
