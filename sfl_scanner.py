@@ -335,11 +335,16 @@ def scan_user(user: dict) -> "int | None":
     _next_reset_ms = int(_tomorrow_utc.timestamp() * 1000)
     daily_info = {"streaks": _dr_next_streaks, "collected_today": _dr_collected_today, "next_reset_ms": _next_reset_ms}
 
+    # ── Twitter info для статус-сообщения ────────────────────────────────────
+    _tw_last_post_ms = state.get("twitter_last_post_ms", 0)
+    twitter_info = {"last_post_ms": _tw_last_post_ms} if _tw_last_post_ms else None
+
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
     status_text = format_status_message(events, farm_id, tz=user_tz,
                                         time_format=state.get("time_format", "both"),
-                                        daily_info=daily_info)
+                                        daily_info=daily_info,
+                                        twitter_info=twitter_info)
     _lang       = state.get("lang", "ru")
     _is_active  = user.get("active", True)
     new_msg_id, is_new    = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
