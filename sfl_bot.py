@@ -54,13 +54,14 @@ GH_BRANCH      = os.environ.get("GH_BRANCH", "main").strip()
 API_BASE = f"https://api.telegram.org/bot{TG_TOKEN}"
 
 def dispatch_new_user_runner(telegram_id: int):
-    """Запускает scanner_matrix.yml для нового юзера через GitHub API dispatch.
+    """Запускает new_user_launcher.yml через GitHub API dispatch.
+    Launcher сам найдёт юзеров с scanner_dispatched=false и запустит их.
     Не бросает исключений — фейл логируется и игнорируется."""
     if not GH_TOKEN or not GH_REPO:
         log.warning("GH_DISPATCH_TOKEN или GH_REPOSITORY не заданы — dispatch пропущен")
         return
-    url = f"https://api.github.com/repos/{GH_REPO}/actions/workflows/scanner_matrix.yml/dispatches"
-    payload = {"ref": GH_BRANCH, "inputs": {"single_user": str(telegram_id)}}
+    url = f"https://api.github.com/repos/{GH_REPO}/actions/workflows/new_user_launcher.yml/dispatches"
+    payload = {"ref": GH_BRANCH}
     try:
         r = requests.post(url, json=payload,
                           headers={"Authorization": f"Bearer {GH_TOKEN}",
