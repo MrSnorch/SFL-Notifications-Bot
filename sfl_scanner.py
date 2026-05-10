@@ -276,9 +276,9 @@ def scan_user(user: dict) -> "int | None":
         repeat_by_key=repeat_by_key,
     )
 
-    # ── Квест (Pumpkin Pete) ──────────────────────────────────────────────────
+    # ── Quest (Pumpkin Pete) ──────────────────────────────────────────────────
     # Алерт о готовности шлёт process_ready_alerts через Event с resource_key="quest".
-    # Здесь отправляем расширенное уведомление с описанием квеста (один раз).
+    # Здесь отправляем расширенное уведомление с описанием Questа (один раз).
     tg_data   = farm.get("telegram") or {}
     quest     = tg_data.get("quest") or {}
     q_name    = quest.get("name", "")
@@ -290,13 +290,13 @@ def scan_user(user: dict) -> "int | None":
         if not last_quest_notified:
             # Холодный старт — запоминаем без уведомления
             state["last_quest_notified"] = q_name
-            log.info(f"[{username}] Квест зафиксирован (холодный старт): {q_name}")
+            log.info(f"[{username}] Quest зафиксирован (холодный старт): {q_name}")
         elif q_name != last_quest_notified:
-            # Новый квест стал доступен — шлём детальное сообщение
+            # Новый Quest стал доступен — шлём детальное сообщение
             text = format_quest_notification(q_name, lang=_lang)
             tg_send(TG_TOKEN, telegram_id, text)
             state["last_quest_notified"] = q_name
-            log.info(f"[{username}] Новый квест: {q_name}")
+            log.info(f"[{username}] Новый Quest: {q_name}")
 
     state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])
 
