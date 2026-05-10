@@ -1105,9 +1105,9 @@ def handle_status(chat_id):
         _dr          = farm.get("dailyRewards") or {}
         _dr_collected_ms = (_dr.get("chest") or {}).get("collectedAt", 0)
         from datetime import datetime, timezone as _utc_tz
-        _today_str   = datetime.now(_utc_tz).strftime("%Y-%m-%d")
+        _today_str   = datetime.now(_utc_tz.utc).strftime("%Y-%m-%d")
         _collected   = (bool(_dr_collected_ms) and
-                        datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz).strftime("%Y-%m-%d") == _today_str)
+                        datetime.fromtimestamp(_dr_collected_ms / 1000, _utc_tz.utc).strftime("%Y-%m-%d") == _today_str)
         daily_info   = {"streaks": _dr.get("streaks", 0), "collected_today": _collected}
         _tg_state    = state.get("twitter_gift") or {}
         twitter_gift_info = {"enabled": _tg_state.get("enabled", False),
@@ -1469,7 +1469,7 @@ def handle_callback(callback_query):
         # Ручное закрытие напоминания о Daily Rewards кнопкой ❌
         if state.get("daily_reminder_msg_id") == msg_id:
             from datetime import datetime, timezone as _utc_tz
-            today_str = datetime.now(_utc_tz).strftime("%Y-%m-%d")
+            today_str = datetime.now(_utc_tz.utc).strftime("%Y-%m-%d")
             state["daily_reminder_msg_id"]          = 0
             state["daily_reminder_dismissed_date"]  = today_str
             update_user(chat_id, state=state)
