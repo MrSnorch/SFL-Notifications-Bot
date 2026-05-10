@@ -924,6 +924,11 @@ _I18N = {
         "en": "🐦 <b>Twitter Gift available!</b>\n\nShare your progress on X (Twitter) to claim your reward.",
         "uk": "🐦 <b>Twitter Gift доступний!</b>\n\nПоділись прогресом у X (Twitter), щоб отримати нагороду.",
     },
+    "twitter_status_available": {
+        "ru": "🐦 <b>Twitter Gift доступен к получению!</b>",
+        "en": "🐦 <b>Twitter Gift available to collect!</b>",
+        "uk": "🐦 <b>Twitter Gift доступний до отримання!</b>",
+    },
 }
 
 
@@ -996,7 +1001,8 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru",
                            time_format: str = "both",
-                           daily_info: dict | None = None) -> str:
+                           daily_info: dict | None = None,
+                           twitter_info: dict | None = None) -> str:
     # time_format: "both" = countdown + clock, "countdown" = countdown only, "clock" = clock only
     """Статус-сообщение — закреп (редактируется, не уведомляет)."""
     _tz = tz or UA_TZ
@@ -1029,6 +1035,27 @@ def format_status_message(events: list[Event], farm_id: str,
         else:
             # Награда доступна к получению
             lines.append(_i18n("daily_status_available", lang, streaks=_streaks))
+
+    if twitter_info is not None:
+        _last_post_ms  = twitter_info.get("last_post_ms", 0)
+        _seven_days_ms = 7 * 24 * 60 * 60 * 1000
+        if _last_post_ms:
+            _gift_ready_ms = _last_post_ms + _seven_days_ms
+            if now_ms >= _gift_ready_ms:
+                # Gift доступен
+                lines.append(_i18n("twitter_status_available", lang))
+            else:
+                # Обратный отсчёт до готовности
+                ms_left = _gift_ready_ms - now_ms
+                if time_format == "clock":
+                    time_str = datetime.fromtimestamp(_gift_ready_ms / 1000, tz=_tz).strftime("%H:%M")
+                elif time_format == "countdown":
+                    time_str = _fmt_ms_human(ms_left, lang)
+                else:  # both
+                    clock = datetime.fromtimestamp(_gift_ready_ms / 1000, tz=_tz).strftime("%H:%M")
+                    time_str = f"{_fmt_ms_human(ms_left, lang)} — {clock}"
+                display_items.append((_gift_ready_ms,
+                    f"🐦 <b>Twitter Gift</b> — {time_str}"))
 
     if not pending and not display_items:
         lines.append(_i18n("all_ready", lang))
