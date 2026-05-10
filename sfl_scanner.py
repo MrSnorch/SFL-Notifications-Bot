@@ -154,8 +154,52 @@ def process_ready_alerts(chat_id: int, events: list[Event],
     return alerts_state
 
 # ══════════════════════════════════════════════════════════════════════════════
-# СКАНИРОВАНИЕ ОДНОГО ПОЛЬЗОВАТЕЛЯ
+# ШАРИК — ВСЕГДА ПОСЛЕДНЕЕ СООБЩЕНИЕ
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _ensure_balloon_last(chat_id: int, alerts_state: dict) -> dict:
+    """
+    Если уведомление шарика существует и после него появились другие уведомления
+    (mid у других > mid шарика) — пересоздаём сообщение шарика чтобы оно было последним.
+    """
+    # Ищем ключ шарика (resource_key="balloon" → имя "Шарик:...")
+    balloon_key = next(
+        (k for k in alerts_state if k.startswith("Шарик:")), None
+    )
+    if not balloon_key:
+        return alerts_state
+
+    stored = alerts_state[balloon_key]
+    if stored.get("dismissed"):
+        return alerts_state
+
+    balloon_mid = stored.get("mid", 0)
+    if not balloon_mid:
+        return alerts_state
+
+    # Максимальный mid среди всех остальных активных алертов
+    other_mids = [
+        v["mid"] for k, v in alerts_state.items()
+        if k != balloon_key and v.get("mid") and not v.get("dismissed")
+    ]
+    if not other_mids or max(other_mids) <= balloon_mid:
+        return alerts_state  # шарик уже последний
+
+    # Пересоздаём: удаляем старое, отправляем новое
+    log.info(f"[{chat_id}] Пересоздаём уведомление шарика (не последнее)")
+    from sfl_core import format_ready_alert, Event
+    # Восстанавливаем Event из сохранённого состояния для форматирования
+    dummy = Event("Шарик", "❤️", 0, stored.get("count", 1),
+                  stored.get("ready_count", 1), resource_key="balloon")
+    text = format_ready_alert(dummy)
+
+    tg_delete(TG_TOKEN, chat_id, balloon_mid)
+    new_mid = tg_send(TG_TOKEN, chat_id, text,
+                      reply_markup=_dismiss_keyboard(balloon_key))
+    if new_mid:
+        alerts_state[balloon_key] = {**stored, "mid": new_mid}
+
+    return alerts_state
 
 def scan_user(user: dict) -> "int | None":
     """Возвращает next_ready_at_ms (мс) — время ближайшего ещё-не-готового события,
@@ -231,6 +275,7 @@ def scan_user(user: dict) -> "int | None":
         repeat_interval_sec=repeat_interval,
         repeat_by_key=repeat_by_key,
     )
+    state["ready_alerts"] = _ensure_balloon_last(telegram_id, state["ready_alerts"])
 
     save_state(telegram_id, state)
     ready_cnt = sum(1 for e in events if e.ready_count > 0)
