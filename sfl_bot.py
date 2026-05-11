@@ -1517,34 +1517,18 @@ def handle_callback(callback_query):
 
     elif data == "settings:close":
         answer_callback(cq_id, t("settings_saved", lang))
-        # Если закрываем настройки из панели — возвращаем панель
-        if msg_id == state.get("status_msg_id"):
-            state["panel_locked"] = 0
-            update_user(chat_id, state=state)
-            user = get_user(chat_id)
-            last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
-            edit_text(chat_id, msg_id, last_text,
+        state["panel_locked"] = 0
+        update_user(chat_id, state=state)
+        user = get_user(chat_id)
+        last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
+        status_msg_id = state.get("status_msg_id")
+        if status_msg_id:
+            # Всегда восстанавливаем закреплённое сообщение с панелью
+            edit_text(chat_id, status_msg_id, last_text,
                       reply_markup=panel_keyboard(lang, user.get("active", True)))
-        else:
-            lines = [
-                f"{'✅' if tracking.get(k) else '❌'} {label}"
-                for k, label in TRACK_LABELS
-            ]
-            for dr in dynamic_resources:
-                icon = "✅" if tracking.get(dr["key"]) else "❌"
-                lines.append(f"{icon} {dr['emoji']} {dr['label']}")
-            repeat = state.get("repeat", {})
-            _rc = int(repeat.get("count", 1))
-            lines.append(f"\n🕐 {tz_display_name(current_tz)}")
-            lines.append(
-                t("repeat_summary_off", lang)
-                if _rc == 0
-                else t("repeat_summary", lang, count=_rc, interval=repeat.get("interval_min", 10))
-            )
-            edit_text(
-                chat_id, msg_id,
-                t("settings_saved_title", lang) + "\n\n" + "\n".join(lines),
-            )
+        if msg_id != status_msg_id:
+            # Настройки открыты в отдельном сообщении — убираем клавиатуру с него
+            edit_text(chat_id, msg_id, t("settings_saved_title", lang))
 
     elif data == "setfarm_prompt":
         answer_callback(cq_id)
