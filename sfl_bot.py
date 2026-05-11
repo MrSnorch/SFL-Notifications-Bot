@@ -1499,6 +1499,10 @@ def handle_callback(callback_query):
         delete_msg(chat_id, msg_id)
         answer_callback(cq_id)
 
+    elif data == "dismiss_msg":
+        delete_msg(chat_id, msg_id)
+        answer_callback(cq_id)
+
     elif data == "noop":
         answer_callback(cq_id)
 
@@ -1528,7 +1532,8 @@ def handle_callback(callback_query):
                       reply_markup=panel_keyboard(lang, user.get("active", True)))
         if msg_id != status_msg_id:
             # Настройки открыты в отдельном сообщении — убираем клавиатуру с него
-            edit_text(chat_id, msg_id, t("settings_saved_title", lang))
+            edit_text(chat_id, msg_id, t("settings_saved_title", lang),
+                      reply_markup={"inline_keyboard": [[{"text": "❌", "callback_data": "dismiss_msg"}]]})
 
     elif data == "setfarm_prompt":
         answer_callback(cq_id)
