@@ -866,7 +866,8 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     buttons.append(_header("─── Специальное ───"))
     buttons.extend(_toggle_rows(special_toggles))
     tg_icon = "✅" if twitter_gift_enabled else "❌"
-    buttons.append([{"text": f"{tg_icon} {t(\"twitter_gift_btn\", lang)}", "callback_data": "twitter_gift:open"}])
+    tg_label = t("twitter_gift_btn", lang)
+    buttons.append([{"text": f"{tg_icon} {tg_label}", "callback_data": "twitter_gift:open"}])
 
     # ── Настройки ─────────────────────────────────────────────────────────────
     tz_label = tz_display_name(current_tz)
