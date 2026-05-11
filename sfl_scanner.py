@@ -59,14 +59,13 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                          repeat_interval_sec: int = 600,
                          repeat_by_key: dict | None = None) -> dict:
     """
-    Для каждого готового события разбивает на волны и отправляет/редактирует алерт на волну.
-    Ключ алерта: "{name}:{wave_anchor_ms}" — стабилен между сканами.
+    Для каждого готового события шлёт/редактирует одно сообщение на ресурс.
+    Ключ алерта: "{name}" — все волны объединены в одно уведомление.
+    Когда новая волна созревает — старое сообщение удаляется, шлётся новое с актуальным счётчиком.
     repeat_by_key: {resource_key: {"count": n, "interval_min": m}} — per-resource настройки.
-    Если ресурс отсутствует в repeat_by_key — используются глобальные repeat_count/repeat_interval_sec.
     """
     current_ready = {}
     now = time.time()
-    now_ms = int(now * 1000)
 
     for e in events:
         if e.ready_count <= 0:
@@ -82,69 +81,68 @@ def process_ready_alerts(chat_id: int, events: list[Event],
             eff_count    = repeat_count
             eff_interval = repeat_interval_sec
 
-        # Разбиваем готовые ресурсы на волны (группы по 5 минут)
-        if e.ready_times and e.count > 1:
-            ready_now = [t for t in e.ready_times if t <= now_ms + 30_000]
-            waves = split_ready_into_waves(ready_now)
-            if not waves:
-                waves = [(e.ready_count, int(e.ready_at_ms))]
+        # Один ключ на весь ресурс — волны объединены
+        key  = e.name
+        text = format_ready_alert(e, wave_count=e.ready_count)
+        current_ready[key] = e
+        stored = alerts_state.get(key)
+
+        if stored is None:
+            # Новый алерт
+            mid = tg_send(TG_TOKEN, chat_id, text,
+                          reply_markup=_dismiss_keyboard(key))
+            if mid:
+                alerts_state[key] = {
+                    "mid":          mid,
+                    "ready_count":  e.ready_count,
+                    "count":        e.count,
+                    "sent_count":   0,
+                    "last_sent_at": now,
+                }
         else:
-            waves = [(e.ready_count, int(e.ready_at_ms))]
+            if stored.get("dismissed"):
+                # Пользователь закрыл алерт кнопкой ❌ — не повторяем
+                # пока ресурс не будет собран (тогда ключ пропадёт из current_ready).
+                continue
+            mid       = stored["mid"]
+            old_rc    = stored.get("ready_count", -1)
+            old_c     = stored.get("count", e.count)
+            sent      = stored.get("sent_count", 1)
+            last_sent = stored.get("last_sent_at", now)
 
-        for wave_count, wave_anchor in waves:
-            key  = f"{e.name}:{wave_anchor}"
-            text = format_ready_alert(e, wave_count=wave_count)
-            current_ready[key] = e
-            stored = alerts_state.get(key)
-
-            if stored is None:
-                # Новый алерт
-                mid = tg_send(TG_TOKEN, chat_id, text,
-                              reply_markup=_dismiss_keyboard(key))
-                if mid:
+            if old_rc != e.ready_count or old_c != e.count:
+                # Счётчик изменился (созрела новая волна) — удаляем старое, шлём новое
+                tg_delete(TG_TOKEN, chat_id, mid)
+                new_mid = tg_send(TG_TOKEN, chat_id, text,
+                                  reply_markup=_dismiss_keyboard(key))
+                alerts_state[key] = {
+                    "mid":          new_mid or mid,
+                    "ready_count":  e.ready_count,
+                    "count":        e.count,
+                    "sent_count":   0,
+                    "last_sent_at": now,
+                }
+                log.info(f"[{chat_id}] Обновлён алерт «{key}»: {old_rc}→{e.ready_count}/{e.count}")
+            elif sent < eff_count and (now - last_sent) >= eff_interval:
+                # Повтор: новое сообщение (пингует), старое удаляем
+                new_mid = tg_send(TG_TOKEN, chat_id, text,
+                                  reply_markup=_dismiss_keyboard(key))
+                if new_mid:
+                    tg_delete(TG_TOKEN, chat_id, mid)
                     alerts_state[key] = {
-                        "mid":          mid,
-                        "ready_count":  wave_count,
+                        "mid":          new_mid,
+                        "ready_count":  e.ready_count,
                         "count":        e.count,
-                        "sent_count":   0,
+                        "sent_count":   sent + 1,
                         "last_sent_at": now,
                     }
+                    log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{eff_count})")
+            elif sent >= eff_count:
+                log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{eff_count})")
             else:
-                if stored.get("dismissed"):
-                    # Пользователь закрыл алерт кнопкой ❌ — не повторяем.
-                    # current_ready уже содержит этот ключ, поэтому cleanup не сработает
-                    # пока wave_anchor не изменится (ресурс собран → новый скан).
-                    continue
-                mid       = stored["mid"]
-                old_rc    = stored.get("ready_count", -1)
-                old_c     = stored.get("count", e.count)
-                sent      = stored.get("sent_count", 1)
-                last_sent = stored.get("last_sent_at", now)
-
-                if old_rc != wave_count or old_c != e.count:
-                    # Счётчик изменился — редактируем
-                    tg_edit(TG_TOKEN, chat_id, mid, text)
-                    alerts_state[key] = {**stored, "ready_count": wave_count, "count": e.count}
-                elif sent < eff_count and (now - last_sent) >= eff_interval:
-                    # Повтор: новое сообщение (пингует), старое удаляем
-                    new_mid = tg_send(TG_TOKEN, chat_id, text,
-                                      reply_markup=_dismiss_keyboard(key))
-                    if new_mid:
-                        tg_delete(TG_TOKEN, chat_id, mid)
-                        alerts_state[key] = {
-                            "mid":          new_mid,
-                            "ready_count":  wave_count,
-                            "count":        e.count,
-                            "sent_count":   sent + 1,
-                            "last_sent_at": now,
-                        }
-                        log.info(f"[{chat_id}] Повтор алерта «{key}» ({sent + 1}/{eff_count})")
-                elif sent >= eff_count:
-                    log.debug(f"[{chat_id}] Алерт «{key}»: повторы исчерпаны ({sent}/{eff_count})")
-                else:
-                    remaining = int(eff_interval - (now - last_sent))
-                    log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
-                              f"(отправлено {sent}/{eff_count})")
+                remaining = int(eff_interval - (now - last_sent))
+                log.debug(f"[{chat_id}] Алерт «{key}»: следующий повтор через {remaining}с "
+                          f"(отправлено {sent}/{eff_count})")
 
     # Удаляем алерты которые больше не актуальны
     for key in list(alerts_state.keys()):
