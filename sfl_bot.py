@@ -35,7 +35,7 @@ log = logging.getLogger("SFL_BOT")
 
 from sfl_core import (
     scan_farm, load_from_api, format_status_message,
-    DEFAULT_TRACKING, TRACK_LABELS,
+    DEFAULT_TRACKING, TRACK_LABELS, SPECIAL_TRACK_KEYS,
     discover_dynamic_resources, merge_discovered,
     TIMEZONES, get_tz, tz_display_name,
     panel_keyboard,
@@ -820,25 +820,51 @@ def repeat_resource_keyboard(lang: str, resource_key: str,
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       repeat_count=3, repeat_interval_min=10, farm_id="?",
                       time_format="both"):
-    """Inline-клавиатура для /settings."""
+    """Inline-клавиатура для /settings.
+
+    Структура:
+      [Ресурсы: 2 в ряд]
+      [── Специальное ──]  (разделитель-кнопка noop)
+      [Специальные тогглы: 2 в ряд]
+      [Динамические ресурсы: 2 в ряд, если есть]
+      [Часовой пояс — полная строка]
+      [Формат времени — полная строка]
+      [Повторы | Twitter Gift]
+      [Изменить ферму]
+      [Сохранить и закрыть]
+    """
+    def _toggle_row(pairs):
+        """Построить кнопки-тогглы из списка (key, label), по 2 в ряд."""
+        rows = []
+        row = []
+        for key, label in pairs:
+            enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
+            icon = "✅" if enabled else "❌"
+            row.append({"text": f"{icon} {label}", "callback_data": f"toggle:{key}"})
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        return rows
+
     buttons = []
 
-    # Тогглы — по 2 в ряд
-    all_toggles = list(TRACK_LABELS) + [
+    # ── Ресурсы ───────────────────────────────────────────────────────────────
+    resource_toggles = [(k, l) for k, l in TRACK_LABELS if k not in SPECIAL_TRACK_KEYS]
+    buttons.extend(_toggle_row(resource_toggles))
+
+    # ── Специальные ───────────────────────────────────────────────────────────
+    special_toggles = [(k, l) for k, l in TRACK_LABELS if k in SPECIAL_TRACK_KEYS]
+    dynamic_toggles = [
         (dr["key"], f"{dr['emoji']} {dr['label']}") for dr in (dynamic_resources or [])
     ]
-    row = []
-    for key, label in all_toggles:
-        enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
-        icon = "✅" if enabled else "❌"
-        row.append({"text": f"{icon} {label}", "callback_data": f"toggle:{key}"})
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
+    all_special = special_toggles + dynamic_toggles
+    if all_special:
+        buttons.append([{"text": "─── Специальное ───", "callback_data": "noop"}])
+        buttons.extend(_toggle_row(all_special))
 
-    # Настройки — логические пары
+    # ── Настройки ─────────────────────────────────────────────────────────────
     tz_label = tz_display_name(current_tz)
     repeat_label = (
         t("repeat_btn_off_label", lang)
@@ -846,10 +872,17 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
         else t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min)
     )
     tf_label = t(f"time_format_{time_format}", lang)
-    buttons.append([
-        {"text": t("tz_btn_label", lang, tz=tz_label), "callback_data": "tz_menu"},
-        {"text": t("show_clock_btn", lang, label=tf_label), "callback_data": "time_format_menu"},
-    ])
+
+    # Часовой пояс — полная строка (предотвращает обрезание)
+    buttons.append([{
+        "text": t("tz_btn_label", lang, tz=tz_label),
+        "callback_data": "tz_menu",
+    }])
+    # Формат времени — полная строка (предотвращает обрезание)
+    buttons.append([{
+        "text": t("show_clock_btn", lang, label=tf_label),
+        "callback_data": "time_format_menu",
+    }])
     buttons.append([
         {"text": repeat_label, "callback_data": "repeat_list"},
         {"text": t("twitter_gift_btn", lang), "callback_data": "twitter_gift:open"},

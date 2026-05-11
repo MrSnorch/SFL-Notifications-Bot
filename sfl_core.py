@@ -338,28 +338,35 @@ DEFAULT_TRACKING = {
     "gold": True, "crimstones": True, "oil": True, "salt": True,
     "sunstones": True, "fruits": True, "flowers": True,
     "honey": True, "mushrooms": True, "animals": True,
-    "balloon": True,
-    "quest": True,
+    "balloon": True, "quest": True,
+    "daily_reward": True, "skills": True,
 }
 
 TRACK_LABELS = [
-    ("crops",      "🌾 Урожай"),
-    ("trees",      "🪵 Деревья"),
-    ("stones",     "🪨 Камни"),
-    ("iron",       "⛏️ Железо"),
-    ("gold",       "🥇 Золото"),
-    ("crimstones", "💎 Криминстоун"),
-    ("oil",        "🛢️ Нефть"),
-    ("salt",       "🧂 Соль"),
-    ("sunstones",  "🌟 Санстоун"),
-    ("fruits",     "🍎 Фрукты"),
-    ("flowers",    "🌸 Цветы"),
-    ("honey",      "🍯 Мёд"),
-    ("mushrooms",  "🍄 Грибы"),
-    ("animals",    "🐄 Животные"),
-    ("balloon",    "❤️ Heart Balloon"),
-    ("quest",      "📜 Pete Quest"),
+    # Ресурсы
+    ("crops",        "🌾 Урожай"),
+    ("trees",        "🪵 Деревья"),
+    ("stones",       "🪨 Камни"),
+    ("iron",         "⛏️ Железо"),
+    ("gold",         "🥇 Золото"),
+    ("crimstones",   "💎 Криминстоун"),
+    ("oil",          "🛢️ Нефть"),
+    ("salt",         "🧂 Соль"),
+    ("sunstones",    "🌟 Санстоун"),
+    ("fruits",       "🍎 Фрукты"),
+    ("flowers",      "🌸 Цветы"),
+    ("honey",        "🍯 Мёд"),
+    ("mushrooms",    "🍄 Грибы"),
+    ("animals",      "🐄 Животные"),
+    # Специальные
+    ("balloon",      "❤️ Heart Balloon"),
+    ("quest",        "📜 Pete Quest"),
+    ("daily_reward", "🎁 Daily Reward"),
+    ("skills",       "⚡ Power Skills"),
 ]
+
+# Ключи «специальных» тогглов — используются в settings_keyboard для группировки
+SPECIAL_TRACK_KEYS = {"balloon", "quest", "daily_reward", "skills"}
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENT CLASS
