@@ -1116,7 +1116,20 @@ def handle_resume(chat_id):
     if not user.get("farm_id"):
         send_service(chat_id, t("resume_no_farm", lang))
         return
-    update_user(chat_id, active=True, scanner_dispatched=False)
+    state = user.get("state") or {}
+    state = _delete_and_reset_alerts(chat_id, state)
+    status_msg_id = state.get("status_msg_id")
+    last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
+    kb = panel_keyboard(lang, True)
+    if status_msg_id:
+        tg("unpinChatMessage", chat_id=chat_id, message_id=status_msg_id)
+        delete_msg(chat_id, status_msg_id)
+    new_pin = send(chat_id, last_text, reply_markup=kb)
+    new_pin_id = new_pin.get("message_id") if new_pin else None
+    if new_pin_id:
+        tg("pinChatMessage", chat_id=chat_id, message_id=new_pin_id, disable_notification=True)
+        state["status_msg_id"] = new_pin_id
+    update_user(chat_id, active=True, scanner_dispatched=False, state=state)
     dispatch_new_user_runner(chat_id)
     send_service(chat_id, t("resume_ok", lang))
 
@@ -1599,13 +1612,22 @@ def handle_callback(callback_query):
         edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
 
     elif data == "panel:resume":
-        update_user(chat_id, active=True, scanner_dispatched=False)
         state["panel_locked"] = 0
-        update_user(chat_id, state=state)
+        state = _delete_and_reset_alerts(chat_id, state)
+        status_msg_id = state.get("status_msg_id")
+        last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
+        kb = panel_keyboard(lang, True)
+        if status_msg_id:
+            tg("unpinChatMessage", chat_id=chat_id, message_id=status_msg_id)
+            delete_msg(chat_id, status_msg_id)
+        new_pin = send(chat_id, last_text, reply_markup=kb)
+        new_pin_id = new_pin.get("message_id") if new_pin else None
+        if new_pin_id:
+            tg("pinChatMessage", chat_id=chat_id, message_id=new_pin_id, disable_notification=True)
+            state["status_msg_id"] = new_pin_id
+        update_user(chat_id, active=True, scanner_dispatched=False, state=state)
         dispatch_new_user_runner(chat_id)
         answer_callback(cq_id)
-        last_text = state.get("last_status_text", "▶️")
-        edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
 
     elif data == "panel:close":
         answer_callback(cq_id)
