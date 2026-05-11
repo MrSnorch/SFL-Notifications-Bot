@@ -24,6 +24,8 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 355
+    outputs:
+      exit_code: ${{ steps.scan.outputs.exit_code }}
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -68,10 +70,13 @@ jobs:
             && echo "✅ Retry triggered" \
             || echo "⚠️ Failed to trigger retry"
 
-  # Self-restart: крутимся пока полная матрица не закроет нас через per-user concurrency
+  # Self-restart: крутимся пока полная матрица не закроет нас через per-user concurrency.
+  # Код 3 = пользователь деактивирован — перезапуск не нужен.
   restart:
     needs: scan
-    if: needs.scan.result == 'success' || needs.scan.result == 'failure'
+    if: |
+      (needs.scan.result == 'success' || needs.scan.result == 'failure') &&
+      needs.scan.outputs.exit_code != '3'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger next single-user run
