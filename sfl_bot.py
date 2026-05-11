@@ -819,7 +819,7 @@ def repeat_resource_keyboard(lang: str, resource_key: str,
 
 def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       repeat_count=3, repeat_interval_min=10, farm_id="?",
-                      time_format="both"):
+                      time_format="both", twitter_gift_enabled=False):
     """Inline-клавиатура для /settings.
 
     Структура:
@@ -865,7 +865,8 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     special_toggles = [(k, l) for k, l in TRACK_LABELS if k in SPECIAL_TRACK_KEYS]
     buttons.append(_header("─── Специальное ───"))
     buttons.extend(_toggle_rows(special_toggles))
-    buttons.append([{"text": t("twitter_gift_btn", lang), "callback_data": "twitter_gift:open"}])
+    tg_icon = "✅" if twitter_gift_enabled else "❌"
+    buttons.append([{"text": f"{tg_icon} {t(\"twitter_gift_btn\", lang)}", "callback_data": "twitter_gift:open"}])
 
     # ── Настройки ─────────────────────────────────────────────────────────────
     tz_label = tz_display_name(current_tz)
@@ -1047,7 +1048,8 @@ def handle_settings(chat_id):
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                         repeat_count, repeat_interval,
                                         farm_id=user.get("farm_id", "?"),
-                                        time_format=state.get("time_format", "both")))
+                                        time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)))
 
 
 def handle_status(chat_id):
@@ -1089,6 +1091,7 @@ def handle_status(chat_id):
                              "last_post_ts": _tg_state.get("last_post_ts", 0)}
         status_text  = format_status_message(events, user["farm_id"], tz=user_tz,
                                              time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False),
                                              daily_info=daily_info,
                                              twitter_gift_info=twitter_gift_info)
         is_active    = user.get("active", True)
@@ -1261,7 +1264,8 @@ def handle_callback(callback_query):
                 reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                                _repeat_count, _repeat_intv,
                                                farm_id=user.get("farm_id", "?"),
-                                               time_format=state.get("time_format", "both")),
+                                               time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
             )
         else:
             answer_callback(cq_id, t("settings_unknown_resource", lang))
@@ -1300,7 +1304,8 @@ def handle_callback(callback_query):
                                                int(repeat.get("count", 1)),
                                                int(repeat.get("interval_min", 10)),
                                                farm_id=user.get("farm_id", "?"),
-                                               time_format=new_tf),
+                                               time_format=new_tf,
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
             )
 
     elif data.startswith("set_tz:"):
@@ -1316,7 +1321,8 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both")),
+                                           time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
         )
 
     elif data.startswith("repeat_count:"):
@@ -1534,7 +1540,8 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both")),
+                                           time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
         )
 
     elif data == "settings:close":
@@ -1592,7 +1599,8 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both")),
+                                           time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
         )
 
     # ── Кнопки панели управления (в закреплённом сообщении) ──────────────────
@@ -1609,7 +1617,8 @@ def handle_callback(callback_query):
                                            int(repeat.get("count", 1)),
                                            int(repeat.get("interval_min", 10)),
                                            farm_id=user.get("farm_id", "?"),
-                                           time_format=state.get("time_format", "both")),
+                                           time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)),
         )
 
     elif data == "panel:lang":
@@ -1823,6 +1832,7 @@ def dispatch(update):
                             int(repeat.get("interval_min", 10)),
                             farm_id=text,
                             time_format=state.get("time_format", "both"),
+                                               twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False),
                         ),
                     )
                 return
