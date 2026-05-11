@@ -250,6 +250,11 @@ STRINGS = {
         "en": "✅ Farm changed to <b>{farm_id}</b>",
         "uk": "✅ Ферму змінено на <b>{farm_id}</b>",
     },
+    "setfarm_changed_notify": {
+        "ru": "🏡 Ферма изменена на <b>{farm_id}</b>!\nПервый статус придёт через несколько минут.",
+        "en": "🏡 Farm changed to <b>{farm_id}</b>!\nFirst status update will arrive in a few minutes.",
+        "uk": "🏡 Ферму змінено на <b>{farm_id}</b>!\nПерший статус надійде за кілька хвилин.",
+    },
     "setfarm_invalid": {
         "ru": "❌ ID фермы должен быть числом. Попробуй снова:",
         "en": "❌ Farm ID must be a number. Try again:",
@@ -1836,6 +1841,8 @@ def dispatch(update):
                                                twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False),
                         ),
                     )
+                if not was_activated:
+                    send_service(chat_id, t("setfarm_changed_notify", lang, farm_id=text))
                 return
 
             elif state.get("awaiting") == "twitter_post_time":

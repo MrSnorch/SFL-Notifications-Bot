@@ -1224,9 +1224,9 @@ QUEST_DATA: dict[str, dict] = {
         "title": "Cornwell's Curiosity",
         "description": "What is Cornwell's profession in Sunflower Land?",
         "choices": [
-            ("📖 Librarian",  "100 Coins 🪙 + 5 Gems 💎"),
-            ("⚒️ Blacksmith", "No prize"),
-            ("🧙 Wizard",     "No prize"),
+            ("📖 Librarian ✅",  "100 Coins 🪙 + 5 Gems 💎"),
+            ("⚒️ Blacksmith ❌", "No prize"),
+            ("🧙 Wizard ❌",     "No prize"),
         ],
     },
     "cornwells-riddle": {
