@@ -176,9 +176,9 @@ STRINGS = {
 
 
     "settings_title": {
-        "ru": "⚙️ <b>Настройки отслеживания</b>\n\nВыбери что отслеживать:",
-        "en": "⚙️ <b>Tracking Settings</b>\n\nChoose what to track:",
-        "uk": "⚙️ <b>Налаштування відстеження</b>\n\nОбери що відстежувати:",
+        "ru": "⚙️ Настройки",
+        "en": "⚙️ Settings",
+        "uk": "⚙️ Налаштування",
     },
     "settings_dynamic_note": {
         "ru": "\n\n🔍 <i>Найдено новых ресурсов: {count}</i>",
@@ -823,20 +823,20 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     """Inline-клавиатура для /settings.
 
     Структура:
-      [Ресурсы: 2 в ряд]
-      [── Специальное ──]  (разделитель-кнопка noop)
-      [Специальные тогглы: 2 в ряд]
-      [Динамические ресурсы: 2 в ряд, если есть]
+      [─── Ресурсы ───]
+      [Ресурсы + динамические (Lava Pits и др.): 2 в ряд]
+      [─── Специальное ───]
+      [balloon, quest, daily_reward, skills: 2 в ряд]
+      [Twitter Gift: полная строка]
+      [─── Настройки ───]
       [Часовой пояс — полная строка]
       [Формат времени — полная строка]
-      [Повторы | Twitter Gift]
+      [Повторы]
       [Изменить ферму]
       [Сохранить и закрыть]
     """
-    def _toggle_row(pairs):
-        """Построить кнопки-тогглы из списка (key, label), по 2 в ряд."""
-        rows = []
-        row = []
+    def _toggle_rows(pairs):
+        rows, row = [], []
         for key, label in pairs:
             enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
             icon = "✅" if enabled else "❌"
@@ -848,21 +848,24 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
             rows.append(row)
         return rows
 
+    def _header(text):
+        return [{"text": text, "callback_data": "noop"}]
+
     buttons = []
 
     # ── Ресурсы ───────────────────────────────────────────────────────────────
     resource_toggles = [(k, l) for k, l in TRACK_LABELS if k not in SPECIAL_TRACK_KEYS]
-    buttons.extend(_toggle_row(resource_toggles))
+    dynamic_toggles  = [
+        (dr["key"], f"{dr['emoji']} {dr['label']}") for dr in (dynamic_resources or [])
+    ]
+    buttons.append(_header("─── Ресурсы ───"))
+    buttons.extend(_toggle_rows(resource_toggles + dynamic_toggles))
 
     # ── Специальные ───────────────────────────────────────────────────────────
     special_toggles = [(k, l) for k, l in TRACK_LABELS if k in SPECIAL_TRACK_KEYS]
-    dynamic_toggles = [
-        (dr["key"], f"{dr['emoji']} {dr['label']}") for dr in (dynamic_resources or [])
-    ]
-    all_special = special_toggles + dynamic_toggles
-    if all_special:
-        buttons.append([{"text": "─── Специальное ───", "callback_data": "noop"}])
-        buttons.extend(_toggle_row(all_special))
+    buttons.append(_header("─── Специальное ───"))
+    buttons.extend(_toggle_rows(special_toggles))
+    buttons.append([{"text": t("twitter_gift_btn", lang), "callback_data": "twitter_gift:open"}])
 
     # ── Настройки ─────────────────────────────────────────────────────────────
     tz_label = tz_display_name(current_tz)
@@ -873,30 +876,13 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
     )
     tf_label = t(f"time_format_{time_format}", lang)
 
-    # Часовой пояс — полная строка (предотвращает обрезание)
-    buttons.append([{
-        "text": t("tz_btn_label", lang, tz=tz_label),
-        "callback_data": "tz_menu",
-    }])
-    # Формат времени — полная строка (предотвращает обрезание)
-    buttons.append([{
-        "text": t("show_clock_btn", lang, label=tf_label),
-        "callback_data": "time_format_menu",
-    }])
-    buttons.append([
-        {"text": repeat_label, "callback_data": "repeat_list"},
-        {"text": t("twitter_gift_btn", lang), "callback_data": "twitter_gift:open"},
-    ])
-    buttons.append([{
-        "text": t("setfarm_btn_change", lang, farm_id=farm_id),
-        "callback_data": "setfarm_prompt",
-    }])
-    buttons.append([{
-        "text": t("settings_btn_save", lang),
-        "callback_data": "settings:close",
-    }])
+    buttons.append(_header("─── Настройки ───"))
+    buttons.append([{"text": t("tz_btn_label", lang, tz=tz_label), "callback_data": "tz_menu"}])
+    buttons.append([{"text": t("show_clock_btn", lang, label=tf_label), "callback_data": "time_format_menu"}])
+    buttons.append([{"text": repeat_label, "callback_data": "repeat_list"}])
+    buttons.append([{"text": t("setfarm_btn_change", lang, farm_id=farm_id), "callback_data": "setfarm_prompt"}])
+    buttons.append([{"text": t("settings_btn_save", lang), "callback_data": "settings:close"}])
     return {"inline_keyboard": buttons}
-
 
 # ── Twitter Gift helpers ───────────────────────────────────────────────────
 
