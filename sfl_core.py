@@ -1556,6 +1556,11 @@ QUEST_DATA: dict[str, dict] = {
             ("🚶 Walk past",   "50 Coins 🪙"),
         ],
     },
+    "petes-prize": {
+        "title": "Pete's Prize",
+        "description": "No Quest, just prize!",
+        "choices": [],
+    },
     # Добавляй новые Questы ниже по тому же шаблону:
     # "quest-name": {
     #     "title": "...",
@@ -1610,6 +1615,9 @@ QUEST_DATA["tywin's-tax"] = QUEST_DATA['tywins-tax']
 QUEST_DATA['tywin-s-tax'] = QUEST_DATA['tywins-tax']
 QUEST_DATA["victoria's-command"] = QUEST_DATA['victorias-command']
 QUEST_DATA['victoria-s-command'] = QUEST_DATA['victorias-command']
+QUEST_DATA["pete's-prize"]  = QUEST_DATA['petes-prize']
+QUEST_DATA['pete-s-prize']  = QUEST_DATA['petes-prize']
+QUEST_DATA['totem-touch']   = QUEST_DATA['ancient-totem']
 
 
 def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
