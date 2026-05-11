@@ -1131,7 +1131,8 @@ def handle_resume(chat_id):
         state["status_msg_id"] = new_pin_id
     update_user(chat_id, active=True, scanner_dispatched=False, state=state)
     dispatch_new_user_runner(chat_id)
-    send_service(chat_id, t("resume_ok", lang))
+    send_service(chat_id, t("resume_ok", lang),
+                 reply_markup={"inline_keyboard": [[{"text": "❌", "callback_data": "dismiss_msg"}]]})
 
 
 def handle_lang(chat_id):
