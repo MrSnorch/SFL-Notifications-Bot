@@ -1116,7 +1116,8 @@ def handle_resume(chat_id):
     if not user.get("farm_id"):
         send_service(chat_id, t("resume_no_farm", lang))
         return
-    update_user(chat_id, active=True)
+    update_user(chat_id, active=True, scanner_dispatched=False)
+    dispatch_new_user_runner(chat_id)
     send_service(chat_id, t("resume_ok", lang))
 
 
@@ -1559,9 +1560,10 @@ def handle_callback(callback_query):
         edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, False))
 
     elif data == "panel:resume":
-        update_user(chat_id, active=True)
+        update_user(chat_id, active=True, scanner_dispatched=False)
         state["panel_locked"] = 0
         update_user(chat_id, state=state)
+        dispatch_new_user_runner(chat_id)
         answer_callback(cq_id)
         last_text = state.get("last_status_text", "▶️")
         edit_text(chat_id, msg_id, last_text, reply_markup=panel_keyboard(lang, True))
