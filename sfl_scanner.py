@@ -627,7 +627,7 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
         user = get_user(telegram_id)
         if not user or not user.get("active"):
             log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
-            break
+            sys.exit(3)  # Код 3 = деактивирован, не перезапускать
 
         # ── Ранний подъём: шлём алерт без скана ────────────────────────────
         if pending_event is not None:
