@@ -1146,6 +1146,35 @@ def handle_reset(chat_id):
     send_service(chat_id, t("reset_confirm", lang), reply_markup=keyboard)
 
 
+def _delete_and_reset_alerts(chat_id: int, state: dict) -> dict:
+    """Удаляет все висящие уведомления и сбрасывает их state.
+    Вызывается после пересоздания закреплённого сообщения — сканер заново
+    отправит уведомления под новым закрепом."""
+    # Ready alerts: удаляем не-dismissed сообщения, очищаем записи
+    alerts_state = state.get("ready_alerts", {})
+    for key, stored in list(alerts_state.items()):
+        mid = stored.get("mid", 0)
+        if mid and not stored.get("dismissed"):
+            delete_msg(chat_id, mid)
+        del alerts_state[key]
+    state["ready_alerts"] = alerts_state
+
+    # Quest
+    quest_mid = state.get("quest_msg_id", 0)
+    if quest_mid:
+        delete_msg(chat_id, quest_mid)
+    state["quest_msg_id"] = 0
+    state["last_quest_notified"] = ""  # сканер заново пришлёт уведомление
+
+    # Daily reminder
+    daily_mid = state.get("daily_reminder_msg_id", 0)
+    if daily_mid:
+        delete_msg(chat_id, daily_mid)
+    state["daily_reminder_msg_id"] = 0
+
+    return state
+
+
 def handle_callback(callback_query):
     cq_id    = callback_query["id"]
     chat_id  = callback_query["from"]["id"]
@@ -1478,18 +1507,28 @@ def handle_callback(callback_query):
     elif data == "settings:close":
         answer_callback(cq_id, t("settings_saved", lang))
         state["panel_locked"] = 0
-        update_user(chat_id, state=state)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
         status_msg_id = state.get("status_msg_id")
-        if status_msg_id:
-            # Всегда восстанавливаем закреплённое сообщение с панелью
-            edit_text(chat_id, status_msg_id, last_text,
-                      reply_markup=panel_keyboard(lang, user.get("active", True)))
+        kb = panel_keyboard(lang, user.get("active", True))
         if msg_id != status_msg_id:
-            # Настройки открыты в отдельном сообщении — убираем клавиатуру с него
+            # Настройки открыты в отдельном сообщении — пересоздаём закреп и уведомления
+            state = _delete_and_reset_alerts(chat_id, state)
+            if status_msg_id:
+                tg("unpinChatMessage", chat_id=chat_id, message_id=status_msg_id)
+                delete_msg(chat_id, status_msg_id)
+            new_pin = send(chat_id, last_text, reply_markup=kb)
+            new_pin_id = new_pin.get("message_id") if new_pin else None
+            if new_pin_id:
+                tg("pinChatMessage", chat_id=chat_id, message_id=new_pin_id,
+                   disable_notification=True)
+                state["status_msg_id"] = new_pin_id
             edit_text(chat_id, msg_id, t("settings_saved_title", lang),
                       reply_markup={"inline_keyboard": [[{"text": "❌", "callback_data": "dismiss_msg"}]]})
+        else:
+            # Настройки открыты прямо на закреплённом сообщении — просто редактируем
+            edit_text(chat_id, status_msg_id, last_text, reply_markup=kb)
+        update_user(chat_id, state=state)
 
     elif data == "setfarm_prompt":
         answer_callback(cq_id)
