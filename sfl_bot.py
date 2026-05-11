@@ -678,13 +678,14 @@ def send_service(chat_id, text, reply_markup=None, silent=False):
 
 def lang_keyboard(current_lang, back_to_panel=False):
     """Inline-клавиатура выбора языка."""
-    buttons = []
+    lang_row = []
     for code, (flag, name) in SUPPORTED_LANGS.items():
         marker = "🔘 " if code == current_lang else ""
-        buttons.append([{
+        lang_row.append({
             "text": f"{marker}{flag} {name}",
             "callback_data": f"set_lang:{code}",
-        }])
+        })
+    buttons = [lang_row]
     if back_to_panel:
         back_labels = {"ru": "◀️ Назад", "en": "◀️ Back", "uk": "◀️ Назад"}
         buttons.append([{
@@ -845,41 +846,41 @@ def settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                       time_format="both"):
     """Inline-клавиатура для /settings."""
     buttons = []
-    for key, label in TRACK_LABELS:
+
+    # Тогглы — по 2 в ряд
+    all_toggles = list(TRACK_LABELS) + [
+        (dr["key"], f"{dr['emoji']} {dr['label']}") for dr in (dynamic_resources or [])
+    ]
+    row = []
+    for key, label in all_toggles:
         enabled = tracking.get(key, DEFAULT_TRACKING.get(key, False))
         icon = "✅" if enabled else "❌"
-        buttons.append([{"text": f"{icon} {label}", "callback_data": f"toggle:{key}"}])
-    for dr in (dynamic_resources or []):
-        key   = dr["key"]
-        label = f"{dr['emoji']} {dr['label']}"
-        icon  = "✅" if tracking.get(key, False) else "❌"
-        buttons.append([{"text": f"{icon} {label}", "callback_data": f"toggle:{key}"}])
+        row.append({"text": f"{icon} {label}", "callback_data": f"toggle:{key}"})
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    # Настройки — логические пары
     tz_label = tz_display_name(current_tz)
-    buttons.append([{
-        "text": t("tz_btn_label", lang, tz=tz_label),
-        "callback_data": "tz_menu",
-    }])
     repeat_label = (
         t("repeat_btn_off_label", lang)
         if repeat_count == 0
         else t("repeat_btn_label", lang, count=repeat_count, interval=repeat_interval_min)
     )
-    buttons.append([{
-        "text": repeat_label,
-        "callback_data": "repeat_list",
-    }])
+    tf_label = t(f"time_format_{time_format}", lang)
+    buttons.append([
+        {"text": t("tz_btn_label", lang, tz=tz_label), "callback_data": "tz_menu"},
+        {"text": t("show_clock_btn", lang, label=tf_label), "callback_data": "time_format_menu"},
+    ])
+    buttons.append([
+        {"text": repeat_label, "callback_data": "repeat_list"},
+        {"text": t("twitter_gift_btn", lang), "callback_data": "twitter_gift:open"},
+    ])
     buttons.append([{
         "text": t("setfarm_btn_change", lang, farm_id=farm_id),
         "callback_data": "setfarm_prompt",
-    }])
-    tf_label = t(f"time_format_{time_format}", lang)
-    buttons.append([{
-        "text": t("show_clock_btn", lang, label=tf_label),
-        "callback_data": "time_format_menu",
-    }])
-    buttons.append([{
-        "text": t("twitter_gift_btn", lang),
-        "callback_data": "twitter_gift:open",
     }])
     buttons.append([{
         "text": t("settings_btn_save", lang),
