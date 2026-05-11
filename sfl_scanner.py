@@ -167,7 +167,7 @@ def _ensure_balloon_last(chat_id: int, alerts_state: dict) -> dict:
     """
     # Ищем ключ шарика (resource_key="balloon" → имя "Шарик:...")
     balloon_key = next(
-        (k for k in alerts_state if k.startswith("Шарик:")), None
+        (k for k in alerts_state if k.startswith("Heart Balloon:")), None
     )
     if not balloon_key:
         return alerts_state
@@ -192,7 +192,7 @@ def _ensure_balloon_last(chat_id: int, alerts_state: dict) -> dict:
     log.info(f"[{chat_id}] Пересоздаём уведомление шарика (не последнее)")
     from sfl_core import format_ready_alert, Event
     # Восстанавливаем Event из сохранённого состояния для форматирования
-    dummy = Event("Шарик", "❤️", 0, stored.get("count", 1),
+    dummy = Event("Heart Balloon", "❤️", 0, stored.get("count", 1),
                   stored.get("ready_count", 1), resource_key="balloon")
     text = format_ready_alert(dummy)
 

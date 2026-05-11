@@ -357,8 +357,8 @@ TRACK_LABELS = [
     ("honey",      "🍯 Мёд"),
     ("mushrooms",  "🍄 Грибы"),
     ("animals",    "🐄 Животные"),
-    ("balloon",    "❤️ Шарик"),
-    ("quest",      "📜 Quest"),
+    ("balloon",    "❤️ Heart Balloon"),
+    ("quest",      "📜 Pete Quest"),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -780,7 +780,7 @@ def scan_farm(farm: dict, track: dict,
                     next_start, next_end = min(future, key=lambda x: x[0])
                     is_here = next_start <= now_ms
                     rc = 1 if is_here else 0
-                    events.append(Event("Шарик", "❤️", next_start, 1, rc,
+                    events.append(Event("Heart Balloon", "❤️", next_start, 1, rc,
                         extra="",
                         last_ready_at_ms=next_end,
                         resource_key="balloon"))
@@ -796,7 +796,7 @@ def scan_farm(farm: dict, track: dict,
         q_choices = quest.get("choices", [])
         if q_start and q_name and not q_choices:
             rc = 1 if q_start <= now_ms else 0
-            events.append(Event("Quest", "📜", q_start, 1, rc,
+            events.append(Event("Pete Quest", "📜", q_start, 1, rc,
                 extra=q_name,
                 resource_key="quest"))
 
@@ -882,9 +882,9 @@ _I18N = {
         "uk": "{emoji} <b>{name}{cnt}{extra} — готово до збору ✅</b>",
     },
     "balloon_arrived": {
-        "ru": "❤️ <b>Шарик прилетел!</b>{until}",
-        "en": "❤️ <b>Balloon arrived!</b>{until}",
-        "uk": "❤️ <b>Шарик прилетів!</b>{until}",
+        "ru": "❤️ <b>Heart Balloon прилетел!</b>{until}",
+        "en": "❤️ <b>Heart Balloon arrived!</b>{until}",
+        "uk": "❤️ <b>Heart Balloon прилетів!</b>{until}",
     },
     "balloon_until": {
         "ru": " Успей слетать до {clock}!",
@@ -892,9 +892,9 @@ _I18N = {
         "uk": " Встигни злітати до {clock}!",
     },
     "quest_arrived": {
-        "ru": "📜 <b>Новый Quest доступен!</b>",
-        "en": "📜 <b>New quest available!</b>",
-        "uk": "📜 <b>Новий Quest доступний!</b>",
+        "ru": "📜 <b>Новый Pete Quest доступен!</b>",
+        "en": "📜 <b>New Pete Quest available!</b>",
+        "uk": "📜 <b>Новий Pete Quest доступний!</b>",
     },
     "daily_reward_ready": {
         "ru": "🎁 <b>Daily Reward [{streaks}] — готово к получению ✅</b>",
@@ -1609,7 +1609,7 @@ def format_quest_notification(quest_name: str, lang: str = "ru") -> str:
         if len(parts) == 2:
             data = QUEST_DATA.get(parts[0] + "s-" + parts[1])
 
-    header = "📜 <b>Новый Quest</b>  Pumpkin Pete"
+    header = "📜 <b>Pete Quest</b>"
 
     if not data:
         # Quest неизвестен — показываем имя как есть
