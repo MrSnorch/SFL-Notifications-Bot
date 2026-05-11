@@ -575,9 +575,16 @@ def scan_farm(farm: dict, track: dict,
             rc = sa_stored + sum(1 for t in sa_ready if t <= now_ms)
             # Если sa_ready пуст, значит все узлы уже имеют storedCharges (готовы к сбору).
             # Используем 0 как стабильный анкор, чтобы ключ алерта не менялся между сканами.
+            # earliest для ready_at_ms берём как минимальное время (любое — для ключа алерта).
             earliest = min(sa_ready) if sa_ready else 0
+            # pending_at_ms должен указывать на ближайший ЕЩЁ НЕ ГОТОВЫЙ узел
+            # (т.е. только будущие времена). Иначе pending_at_ms окажется в прошлом →
+            # закреп будет вечно показывать "сейчас" вместо реального обратного отсчёта.
+            sa_pending = [t for t in sa_ready if t > now_ms]
+            pnd = min(sa_pending) if sa_pending else 0
             events.append(Event("Salt", "🧂", earliest, total, rc,
                 f"{rc}/{total} готово" if rc else f"{total} узл.",
+                pending_at_ms=pnd,
                 resource_key="salt"))
 
     # ── SUNSTONES ─────────────────────────────────────────────────────────────
