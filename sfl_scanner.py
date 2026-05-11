@@ -335,8 +335,11 @@ def scan_user(user: dict) -> "int | None":
     repeat_interval = int(repeat.get("interval_min", 10)) * 60
     # Per-resource repeat overrides: {resource_key: {"count": n, "interval_min": m}}
     repeat_by_key   = state.get("repeat_per_resource", {}) or {}
+    # Quest исключается из process_ready_alerts — детальное уведомление
+    # отправляется отдельным блоком ниже (format_quest_notification).
+    non_quest_events = [e for e in events if getattr(e, "resource_key", "") != "quest"]
     state["ready_alerts"] = process_ready_alerts(
-        telegram_id, events, alerts_state,
+        telegram_id, non_quest_events, alerts_state,
         repeat_count=repeat_count,
         repeat_interval_sec=repeat_interval,
         repeat_by_key=repeat_by_key,
@@ -365,7 +368,7 @@ def scan_user(user: dict) -> "int | None":
         if q_name != last_quest_notified:
             # Новый Quest стал доступен — шлём детальное сообщение с кнопкой ❌
             text = format_quest_notification(q_name, lang=_lang)
-            dismiss_kb = {"inline_keyboard": [[{"text": "❌", "callback_data": "quest_dismiss"}]]}
+            dismiss_kb = {"inline_keyboard": [[{"text": "Выполнить", "url": "https://t.me/pumpkin_pete_bot?start=MrSnorch"}]]}
             mid = tg_send(TG_TOKEN, telegram_id, text, reply_markup=dismiss_kb)
             state["last_quest_notified"] = q_name
             state["last_quest_start_at"] = q_start
