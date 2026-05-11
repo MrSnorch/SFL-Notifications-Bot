@@ -49,11 +49,14 @@ jobs:
           SUPABASE_KEY:        ${{ secrets.SUPABASE_SERVICE_KEY }}
           SFL_API_KEY:         ${{ secrets.SFL_API_KEY }}
         run: |
+          set +e
           python sfl_scanner.py \
             --user ${{ inputs.telegram_id }} \
             --duration 20700 \
             --interval 30
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          EC=$?
+          echo "exit_code=$EC" >> $GITHUB_OUTPUT
+          exit $EC
 
       # 429 — перезапускаем на новом runner'е (новый IP)
       - name: Retry on new IP if rate limited
