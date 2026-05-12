@@ -627,7 +627,7 @@ def scan_farm(farm: dict, track: dict,
             pnd = times[rc] if rc < len(times) else times[-1]
             events.append(Event(name, "🍎", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} деревьев",
-                pending_at_ms=pnd, last_ready_at_ms=times[-1],
+                pending_at_ms=pnd, last_ready_at_ms=times[-1], ready_times=times,
                 resource_key="fruits"))
 
     # ── FLOWERS ───────────────────────────────────────────────────────────────

@@ -500,7 +500,7 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
         wave_count  = event.ready_count
         wave_anchor = int(event.ready_at_ms)
 
-    key  = f"{event.name}:{wave_anchor}"
+    key  = event.name
     text = format_ready_alert(event, wave_count=wave_count)
     mid  = tg_send(TG_TOKEN, telegram_id, text,
                    reply_markup=_dismiss_keyboard(key))
