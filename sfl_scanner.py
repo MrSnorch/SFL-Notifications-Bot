@@ -305,17 +305,23 @@ def scan_user(user: dict) -> "int | None":
     _is_active  = user.get("active", True)
 
     # Если юзер сейчас в меню настроек — не перезаписываем закреп.
-    # panel_locked = timestamp входа; таймаут 30 минут на случай если юзер
+    # panel_locked = timestamp входа; таймаут 5 минут на случай если юзер
     # просто закрыл приложение не выйдя из настроек.
+    SETTINGS_TIMEOUT = 300
     _panel_locked_at = state.get("panel_locked", 0)
-    _panel_is_open   = bool(_panel_locked_at) and (time.time() - _panel_locked_at < 1800)
+    _panel_is_open   = bool(_panel_locked_at) and (time.time() - _panel_locked_at < SETTINGS_TIMEOUT)
     if _panel_is_open:
         log.info(f"[{username}] ⏸ Настройки открыты — закреп не редактируется")
         state["last_status_text"] = status_text  # сохраняем актуальный текст
     else:
         if _panel_locked_at and not _panel_is_open:
-            # Таймаут 30 минут истёк — автоматически снимаем блокировку
+            # Таймаут истёк — автоматически снимаем блокировку
             state["panel_locked"] = 0
+            # Если настройки были открыты в отдельном сообщении — закрыть его
+            settings_msg_id = state.pop("settings_msg_id", None)
+            if settings_msg_id and settings_msg_id != status_msg_id:
+                tg_edit(TG_TOKEN, telegram_id, settings_msg_id,
+                        status_text, reply_markup=panel_keyboard(_lang, _is_active))
         new_msg_id, is_new = tg_upsert_status(TG_TOKEN, telegram_id, status_text, status_msg_id,
                                                reply_markup=panel_keyboard(_lang, _is_active))
         state["status_msg_id"] = new_msg_id

@@ -1050,12 +1050,16 @@ def handle_settings(chat_id):
     text = t("settings_title", lang)
     if dynamic_resources:
         text += t("settings_dynamic_note", lang, count=len(dynamic_resources))
-    send_service(chat_id, text,
+    msg = send_service(chat_id, text,
          reply_markup=settings_keyboard(tracking, dynamic_resources, current_tz, lang,
                                         repeat_count, repeat_interval,
                                         farm_id=user.get("farm_id", "?"),
                                         time_format=state.get("time_format", "both"),
                                                twitter_gift_enabled=state.get("twitter_gift", {}).get("enabled", False)))
+    if msg and msg.get("message_id"):
+        state["settings_msg_id"] = msg["message_id"]
+        state["panel_locked"] = int(time.time())
+        update_user(chat_id, state=state)
 
 
 def handle_status(chat_id):
@@ -1553,6 +1557,7 @@ def handle_callback(callback_query):
     elif data == "settings:close":
         answer_callback(cq_id, t("settings_saved", lang))
         state["panel_locked"] = 0
+        state.pop("settings_msg_id", None)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
         status_msg_id = state.get("status_msg_id")
@@ -1667,6 +1672,7 @@ def handle_callback(callback_query):
     elif data == "panel:close":
         answer_callback(cq_id)
         state["panel_locked"] = 0
+        state.pop("settings_msg_id", None)
         update_user(chat_id, state=state)
         user = get_user(chat_id)
         last_text = state.get("last_status_text", "🌻 SFL Farm Notifier")
