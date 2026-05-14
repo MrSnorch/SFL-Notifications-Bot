@@ -1332,7 +1332,7 @@ QUEST_DATA: dict[str, dict] = {
             ("🚶 Ignore it",               "100 Coins 🪙"),
         ],
     },
-    "help-old-cornwell": {
+    "help-cornwell": {
         "title": "Help Old Cornwell",
         "description": "Wise Old Cornwell waves you over, arms full of freshly picked Kale. He looks exhausted and could use a hand. Will you help?",
         "choices": [
