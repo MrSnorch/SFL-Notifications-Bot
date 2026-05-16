@@ -110,8 +110,9 @@ def process_ready_alerts(chat_id: int, events: list[Event],
             sent      = stored.get("sent_count", 1)
             last_sent = stored.get("last_sent_at", now)
 
-            if old_rc != e.ready_count or old_c != e.count:
-                # Счётчик изменился (созрела новая волна) — удаляем старое, шлём новое
+            if e.ready_count > old_rc or old_c != e.count:
+                # ready_count вырос (созрела новая волна) — удаляем старое, шлём новое.
+                # Если ready_count упал (игрок собрал часть) — не трогаем, молчим.
                 tg_delete(TG_TOKEN, chat_id, mid)
                 new_mid = tg_send(TG_TOKEN, chat_id, text,
                                   reply_markup=_dismiss_keyboard(key))
@@ -122,7 +123,11 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     "sent_count":   0,
                     "last_sent_at": now,
                 }
-                log.info(f"[{chat_id}] Обновлён алерт «{key}»: {old_rc}→{e.ready_count}/{e.count}")
+                log.info(f"[{chat_id}] Новая волна алерта «{key}»: {old_rc}→{e.ready_count}/{e.count}")
+            elif e.ready_count < old_rc:
+                # Игрок собрал часть — просто обновляем счётчик в стейте без уведомления
+                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
+                log.info(f"[{chat_id}] Алерт «{key}»: собрано {old_rc - e.ready_count} шт, осталось {e.ready_count}/{e.count} — без уведомления")
             elif sent < eff_count and (now - last_sent) >= eff_interval:
                 # Повтор: новое сообщение (пингует), старое удаляем
                 new_mid = tg_send(TG_TOKEN, chat_id, text,
@@ -459,7 +464,10 @@ def scan_user(user: dict) -> "int | None":
     # Берём только будущие timestamps — прошедшие означают что событие уже готово
     # но не собрано, уведомление уже отправлено, незачем сканировать снова.
     now_ms    = int(time.time() * 1000)
-    not_ready = [e for e in events if e.ready_count < e.count and e.ready_at_ms > now_ms]
+    # Quest исключается из раннего подъёма — у него свой блок отправки (format_quest_notification).
+    # Иначе _fire_pending_alert шлёт пустое "quest_arrived", а потом полное уведомление — дублируется.
+    not_ready = [e for e in events if e.ready_count < e.count and e.ready_at_ms > now_ms
+                 and getattr(e, "resource_key", "") != "quest"]
     if not_ready:
         next_event = min(not_ready, key=lambda e: e.ready_at_ms)
         return next_event.ready_at_ms, next_event
