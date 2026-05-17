@@ -110,7 +110,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
             sent      = stored.get("sent_count", 1)
             last_sent = stored.get("last_sent_at", now)
 
-            if e.ready_count > old_rc or old_c != e.count:
+            if e.ready_count > old_rc or e.count > old_c:
                 # ready_count вырос (созрела новая волна) — удаляем старое, шлём новое.
                 # Если ready_count упал (игрок собрал часть) — не трогаем, молчим.
                 tg_delete(TG_TOKEN, chat_id, mid)
