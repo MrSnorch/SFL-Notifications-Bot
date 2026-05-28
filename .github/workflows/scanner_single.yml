@@ -77,8 +77,14 @@ jobs:
   # Код 3 = пользователь деактивирован — перезапуск не нужен.
   restart:
     needs: scan
-    if: |
-      (needs.scan.result == 'success' || needs.scan.result == 'failure') &&
+    # ФИКС: заменено (success || failure) на != 'skipped'.
+    # Старое условие пропускало статус 'cancelled' — если job отменялся
+    # по любой причине кроме matrix-takeover (напр. инфраструктурный сбой),
+    # restart скипался и цепочка обрывалась навсегда.
+    # 'skipped' остаётся исключением: scan не может быть skipped (нет if-условия),
+    # поэтому это значение зарезервировано как сигнал "что-то пошло совсем не так".
+    if: >
+      needs.scan.result != 'skipped' &&
       needs.scan.outputs.exit_code != '3'
     runs-on: ubuntu-latest
     steps:

@@ -6,7 +6,7 @@ name: SFL Scanner Matrix
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # Страховка
+    - cron: '0 */6 * * *'   # Страховка + восстановление цепочки если dispatch сломался
   workflow_dispatch:
     inputs:
       single_user:
@@ -133,14 +133,15 @@ jobs:
 
   # ── Шаг 3: self-restart ────────────────────────────────────────────────────
   restart:
-    needs: scan
-    # Рестарт при любом workflow_dispatch:
-    # - full run (single_user == '') → перезапускает полную матрицу
-    # - single_user run             → перезапускает только этого юзера
-    #   (полная матрица его подхватит на следующем цикле и закроет этот runner
-    #    через per-user concurrency)
-    # Cron — чистая страховка: запустил и всё, без продолжения цепочки.
-    if: always() && github.event_name == 'workflow_dispatch'
+    needs: [prepare, scan]
+    # ФИКС 1: добавлен schedule — когда кron восстанавливает сломанную цепочку,
+    #          он теперь сам устанавливает новую dispatch-цепочку.
+    # ФИКС 2: добавлена проверка has_users — без неё restart запускался даже
+    #          при пустом списке юзеров, создавая бесконечный цикл пустых запусков.
+    if: >
+      always() &&
+      needs.prepare.outputs.has_users == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     concurrency:
       group: sfl-matrix-restart
@@ -164,4 +165,4 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scanner_matrix.yml/dispatches" \
             -d "$PAYLOAD" \
             && echo "✅ Next run triggered" \
-            || echo "⚠️ Failed (cron will catch it)"
+            || echo "⚠️ Failed"
