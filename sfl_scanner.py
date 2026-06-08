@@ -295,8 +295,10 @@ def scan_user(user: dict) -> "int | None":
             _tg_sent      = _tg_state.get("sent_count", 0)
             _tg_last_sent = _tg_state.get("last_sent_at", 0)
             _now          = time.time()
-            _tg_rep_count = max(0, min(5, int(state.get("repeat", {}).get("count", 2))))
-            _tg_rep_interval = int(state.get("repeat", {}).get("interval_min", 10)) * 60
+            _tg_per = (state.get("repeat_per_resource") or {}).get("twitter_gift")
+            _global_rep = state.get("repeat", {})
+            _tg_rep_count    = max(0, min(5, int((_tg_per or _global_rep).get("count", 2))))
+            _tg_rep_interval = int((_tg_per or _global_rep).get("interval_min", 10)) * 60
             if _tg_sent == 0:
                 # Первое уведомление
                 _new_mid = tg_send(TG_TOKEN, telegram_id, _tg_notify_text, reply_markup=_tg_done_kb)
