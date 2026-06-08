@@ -776,6 +776,21 @@ def repeat_resource_list_keyboard(tracking: dict, dynamic_resources: list,
             "callback_data": f"repeat_res:{key}",
         }])
 
+    # Twitter Gift — показываем если включён
+    if (state.get("twitter_gift") or {}).get("enabled", False):
+        tg_key = "twitter_gift"
+        tg_label = "🐦 Twitter Gift"
+        custom = per_res.get(tg_key)
+        if custom is not None:
+            summary = _repeat_summary(lang, int(custom.get("count", 1)),
+                                      int(custom.get("interval_min", 10)))
+        else:
+            summary = _repeat_summary(lang, g_count, g_interval, inherited=True)
+        buttons.append([{
+            "text": t("repeat_res_btn", lang, label=tg_label, summary=summary),
+            "callback_data": f"repeat_res:{tg_key}",
+        }])
+
     buttons.append([{
         "text": t("settings_btn_back", lang),
         "callback_data": "settings:open",
@@ -1400,7 +1415,7 @@ def handle_callback(callback_query):
             r_count    = int(rep.get("count", 1))
             r_interval = int(rep.get("interval_min", 10))
             has_custom = False
-            label = dict(TRACK_LABELS).get(res_key, res_key)
+            label = "🐦 Twitter Gift" if res_key == "twitter_gift" else dict(TRACK_LABELS).get(res_key, res_key)
         edit_text(
             chat_id, msg_id,
             t("repeat_res_title", lang, label=label),
