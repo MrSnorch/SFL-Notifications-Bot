@@ -491,8 +491,7 @@ def scan_farm(farm: dict, track: dict,
             if not planted:
                 continue
             grow = CROP_GROW_MS.get(name, 3_600_000)
-            boosted = c.get("boostedTime", 0)  # ms, игровой буст
-            crop_map.setdefault(name, []).append(planted + grow - boosted)
+            crop_map.setdefault(name, []).append(planted + grow)
         for name, times in crop_map.items():
             times.sort()
             rc = sum(1 for t in times if t <= now_ms)
