@@ -114,6 +114,7 @@ CROP_GROW_MS: dict[str, int] = {
     "Soybean":     3*3_600_000,
     "Beetroot":    4*3_600_000,
     "Hot Pepper":  4*3_600_000,
+    "Pepper":      4*3_600_000,
     "Cauliflower": 8*3_600_000,
     "Parsnip":     12*3_600_000,
     "Coffee":      12*3_600_000,
@@ -490,7 +491,8 @@ def scan_farm(farm: dict, track: dict,
             if not planted:
                 continue
             grow = CROP_GROW_MS.get(name, 3_600_000)
-            crop_map.setdefault(name, []).append(planted + grow)
+            boosted = c.get("boostedTime", 0)  # ms, игровой буст
+            crop_map.setdefault(name, []).append(planted + grow - boosted)
         for name, times in crop_map.items():
             times.sort()
             rc = sum(1 for t in times if t <= now_ms)
