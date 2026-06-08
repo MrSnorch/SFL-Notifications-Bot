@@ -278,27 +278,43 @@ def scan_user(user: dict) -> "int | None":
     if _tg_enabled and _tg_last_ts:
         _tg_elapsed   = time.time() - _tg_last_ts
         _tg_remaining = 604800 - _tg_elapsed  # 168h
-        _tg_notified  = _tg_state.get("notified", False)
-        if _tg_remaining <= 0 and not _tg_notified:
+        if _tg_remaining <= 0:
             _tg_done_kb = {"inline_keyboard": [[
                 {"text": "✅ Выполнено" if state.get("lang", "ru") == "ru"
                           else ("✅ Виконано" if state.get("lang") == "uk" else "✅ Done"),
                  "callback_data": "twitter_gift:done"}
             ]]}
-            _tg_notify_text = "🐦 <b>Twitter Gift</b> — готово к сбору ✅\n\nНажми кнопку после публикации твита, чтобы запустить таймер заново."
             _lang_now = state.get("lang", "ru")
             if _lang_now == "en":
                 _tg_notify_text = "🐦 <b>Twitter Gift</b> — ready to collect ✅\n\nPress the button after posting your tweet to restart the timer."
             elif _lang_now == "uk":
                 _tg_notify_text = "🐦 <b>Twitter Gift</b> — готово до збору ✅\n\nНатисни кнопку після публікації твіту, щоб перезапустити таймер."
-            _old_notify_mid = _tg_state.get("notify_msg_id", 0)
-            if _old_notify_mid:
-                tg_delete(TG_TOKEN, telegram_id, _old_notify_mid)
-            _new_notify_mid = tg_send(TG_TOKEN, telegram_id, _tg_notify_text, reply_markup=_tg_done_kb)
-            _tg_state["notified"]      = True
-            _tg_state["notify_msg_id"] = _new_notify_mid or 0
-            state["twitter_gift"] = _tg_state
-            log.info(f"[{username}] 🐦 Twitter Gift: таймер истёк — уведомление отправлено")
+            else:
+                _tg_notify_text = "🐦 <b>Twitter Gift</b> — готово к сбору ✅\n\nНажми кнопку после публикации твита, чтобы запустить таймер заново."
+            _tg_mid       = _tg_state.get("notify_msg_id", 0)
+            _tg_sent      = _tg_state.get("sent_count", 0)
+            _tg_last_sent = _tg_state.get("last_sent_at", 0)
+            _now          = time.time()
+            _tg_rep_count = max(0, min(5, int(state.get("repeat", {}).get("count", 2))))
+            _tg_rep_interval = int(state.get("repeat", {}).get("interval_min", 10)) * 60
+            if _tg_sent == 0:
+                # Первое уведомление
+                _new_mid = tg_send(TG_TOKEN, telegram_id, _tg_notify_text, reply_markup=_tg_done_kb)
+                _tg_state["notify_msg_id"] = _new_mid or 0
+                _tg_state["sent_count"]    = 1
+                _tg_state["last_sent_at"]  = _now
+                state["twitter_gift"] = _tg_state
+                log.info(f"[{username}] 🐦 Twitter Gift: уведомление отправлено (1)")
+            elif _tg_sent < _tg_rep_count and (_now - _tg_last_sent) >= _tg_rep_interval:
+                # Повтор: удаляем старое, шлём новое (пингует)
+                if _tg_mid:
+                    tg_delete(TG_TOKEN, telegram_id, _tg_mid)
+                _new_mid = tg_send(TG_TOKEN, telegram_id, _tg_notify_text, reply_markup=_tg_done_kb)
+                _tg_state["notify_msg_id"] = _new_mid or 0
+                _tg_state["sent_count"]    = _tg_sent + 1
+                _tg_state["last_sent_at"]  = _now
+                state["twitter_gift"] = _tg_state
+                log.info(f"[{username}] 🐦 Twitter Gift: повтор ({_tg_sent + 1}/{_tg_rep_count})")
 
     # ── Статус-сообщение (редактируется, не пингует) ─────────────────────────
     user_tz     = get_tz(state.get("timezone"))
