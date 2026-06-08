@@ -1713,18 +1713,15 @@ def handle_callback(callback_query):
     elif data == "twitter_gift:done":
         import time as _time
         tg_state = state.get("twitter_gift") or {}
-        tg_state["last_post_ts"] = int(_time.time())
-        tg_state["notified"]     = False
+        tg_state["last_post_ts"]  = int(_time.time())
         tg_state["notify_msg_id"] = 0
+        tg_state["sent_count"]    = 0
+        tg_state["last_sent_at"]  = 0
+        tg_state.pop("notified", None)
         state["twitter_gift"] = tg_state
         update_user(chat_id, state=state)
         answer_callback(cq_id, t("twitter_gift_done_toast", lang))
-        status = _twitter_gift_status_text(tg_state, lang, user_tz)
-        edit_text(
-            chat_id, msg_id,
-            t("twitter_gift_title", lang, status=status),
-            reply_markup=twitter_gift_keyboard(tg_state, lang),
-        )
+        delete_msg(chat_id, msg_id)
 
     elif data == "twitter_gift:set_time":
         answer_callback(cq_id)
