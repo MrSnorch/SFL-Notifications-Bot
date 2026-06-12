@@ -1720,10 +1720,20 @@ def tg_edit(token: str, chat_id: int, message_id: int, text: str,
 
 def tg_delete(token: str, chat_id: int, message_id: int):
     try:
-        requests.post(
+        r = requests.post(
             f"https://api.telegram.org/bot{token}/deleteMessage",
             json={"chat_id": chat_id, "message_id": message_id},
             timeout=10)
+        if not r.ok:
+            # Fallback: can't delete (older than 48h) — strip the inline keyboard instead.
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/editMessageReplyMarkup",
+                    json={"chat_id": chat_id, "message_id": message_id,
+                          "reply_markup": {"inline_keyboard": []}},
+                    timeout=10)
+            except Exception:
+                pass
     except Exception:
         pass
 
