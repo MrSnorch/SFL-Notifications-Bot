@@ -594,6 +594,10 @@ def tg(method, **kwargs):
         r = requests.post(f"{API_BASE}/{method}", json=kwargs, timeout=http_timeout)
         if r.ok:
             return r.json().get("result")
+        # deleteMessage failing with 400 "can't be deleted for everyone" is expected
+        # for messages older than 48h — delete_msg handles this with a keyboard fallback.
+        if method == "deleteMessage" and r.status_code == 400 and "can't be deleted" in r.text:
+            return None
         log.warning(f"TG {method} failed: {r.status_code} {r.text[:200]}")
     except Exception as e:
         log.warning(f"TG {method} error: {e}")
