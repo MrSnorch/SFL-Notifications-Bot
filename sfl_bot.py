@@ -630,7 +630,13 @@ def answer_callback(callback_query_id, text=""):
 
 
 def delete_msg(chat_id, message_id):
-    tg("deleteMessage", chat_id=chat_id, message_id=message_id)
+    result = tg("deleteMessage", chat_id=chat_id, message_id=message_id)
+    if result is None:
+        # deleteMessage failed (e.g. message older than 48h — can't delete for everyone).
+        # Fallback: remove the inline keyboard so the ❌ button disappears.
+        tg("editMessageReplyMarkup",
+           chat_id=chat_id, message_id=message_id,
+           reply_markup={"inline_keyboard": []})
 
 def track_msg(chat_id, message_id):
     """Сохранить ID сервисного сообщения для последующей очистки."""
