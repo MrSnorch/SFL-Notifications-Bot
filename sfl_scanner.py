@@ -125,9 +125,11 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                 }
                 log.info(f"[{chat_id}] Новая волна алерта «{key}»: {old_rc}→{e.ready_count}/{e.count}")
             elif e.ready_count < old_rc:
-                # Игрок собрал часть — просто обновляем счётчик в стейте без уведомления
+                # Игрок собрал часть — редактируем существующее сообщение (без пинга)
+                tg_edit(TG_TOKEN, chat_id, mid, text,
+                        reply_markup=_dismiss_keyboard(key))
                 alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
-                log.info(f"[{chat_id}] Алерт «{key}»: собрано {old_rc - e.ready_count} шт, осталось {e.ready_count}/{e.count} — без уведомления")
+                log.info(f"[{chat_id}] Алерт «{key}»: собрано {old_rc - e.ready_count} шт, осталось {e.ready_count}/{e.count} — сообщение отредактировано")
             elif sent < eff_count and (now - last_sent) >= eff_interval:
                 # Повтор: новое сообщение (пингует), старое удаляем
                 new_mid = tg_send(TG_TOKEN, chat_id, text,
