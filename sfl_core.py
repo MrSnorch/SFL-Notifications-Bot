@@ -128,9 +128,10 @@ CROP_GROW_MS: dict[str, int] = {
     "Artichoke":   36*3_600_000,
     "Barley":      48*3_600_000,
     "Rice":        32*3_600_000,
-    "Olive":       24*3_600_000,
+    "Olive":       44*3_600_000,
     "Tomato":      2*3_600_000,
     "Lemon":       4*3_600_000,
+    "Saltwort":    12*3_600_000,
 }
 
 FRUIT_REGROW_MS: dict[str, int] = {
