@@ -38,6 +38,7 @@ from sfl_core import (
 )
 from sfl_supabase import (
     get_all_active_users, get_user, load_state, save_state, update_user,
+    SupabaseUnavailable,
 )
 
 TG_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -654,9 +655,25 @@ def run_loop_user(telegram_id: int, duration_seconds: int = 20700,
     pending_event    = None  # событие которое готово после раннего подъёма
     last_scan_time   = 0.0   # время последнего scan_user — для соблюдения интервала
 
+    consecutive_unavailable = 0
+
     while time.time() < end_time:
         # Перечитываем юзера — tracking/настройки могут меняться через бота
-        user = get_user(telegram_id)
+        try:
+            user = get_user(telegram_id)
+            consecutive_unavailable = 0
+        except SupabaseUnavailable as e:
+            consecutive_unavailable += 1
+            log.warning(f"[{telegram_id}] Supabase недоступен ({e}), "
+                        f"попытка {consecutive_unavailable}/5, ждём и повторяем...")
+            if consecutive_unavailable >= 5:
+                # Затянувшийся сбой инфраструктуры — выходим кодом 2,
+                # чтобы matrix перезапустил юзера на новом runner'е (не 3!)
+                log.error(f"[{telegram_id}] Supabase недоступен 5 раз подряд, выходим для retry.")
+                sys.exit(2)
+            time.sleep(min(30, max(5, end_time - time.time())))
+            continue
+
         if not user or not user.get("active"):
             log.info(f"[{telegram_id}] Пользователь деактивирован, выход.")
             sys.exit(3)  # Код 3 = деактивирован, не перезапускать
