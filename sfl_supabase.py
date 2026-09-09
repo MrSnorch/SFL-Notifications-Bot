@@ -35,17 +35,31 @@ def _url(table: str) -> str:
 
 # ── USERS ────────────────────────────────────────────────────────────────────
 
+class SupabaseUnavailable(Exception):
+    """Транзиентная ошибка (сеть/5xx) — НЕ значит, что юзера нет или он деактивирован."""
+    pass
+
+
 def get_user(telegram_id: int) -> dict | None:
-    r = requests.get(
-        _url("users"),
-        headers=_headers(),
-        params={"telegram_id": f"eq.{telegram_id}"},
-        timeout=15,
-    )
+    try:
+        r = requests.get(
+            _url("users"),
+            headers=_headers(),
+            params={"telegram_id": f"eq.{telegram_id}"},
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        log.warning(f"get_user {telegram_id}: сетевая ошибка {e}")
+        raise SupabaseUnavailable(str(e)) from e
+
     if r.ok:
         data = r.json()
         return data[0] if data else None
+
     log.warning(f"get_user {telegram_id}: {r.status_code} {r.text[:200]}")
+    if r.status_code >= 500:
+        # 502/503/504 и т.п. — сервер временно недоступен, это не "юзера нет"
+        raise SupabaseUnavailable(f"{r.status_code} {r.text[:200]}")
     return None
 
 
