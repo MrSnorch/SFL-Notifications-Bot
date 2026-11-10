@@ -97,6 +97,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     "mid":          mid,
                     "ready_count":  e.ready_count,
                     "count":        e.count,
+                    "extra":        e.extra,
                     "sent_count":   0,
                     "last_sent_at": now,
                 }
@@ -120,6 +121,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     "mid":          new_mid or mid,
                     "ready_count":  e.ready_count,
                     "count":        e.count,
+                    "extra":        e.extra,
                     "sent_count":   0,
                     "last_sent_at": now,
                 }
@@ -128,7 +130,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                 # Изменилось количество готового (выросло в рамках текущей волны либо игрок собрал часть) — редактируем без пинга
                 tg_edit(TG_TOKEN, chat_id, mid, text,
                         reply_markup=_dismiss_keyboard(key))
-                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count}
+                alerts_state[key] = {**stored, "ready_count": e.ready_count, "count": e.count, "extra": e.extra}
                 log.info(f"[{chat_id}] Алерт «{key}»: {old_rc}→{e.ready_count}/{e.count} — сообщение отредактировано")
             elif sent < eff_count and (now - last_sent) >= eff_interval:
                 # Повтор: новое сообщение (пингует), старое удаляем
@@ -140,6 +142,7 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                         "mid":          new_mid,
                         "ready_count":  e.ready_count,
                         "count":        e.count,
+                    "extra":        e.extra,
                         "sent_count":   sent + 1,
                         "last_sent_at": now,
                     }
@@ -198,7 +201,8 @@ def _ensure_balloon_last(chat_id: int, alerts_state: dict) -> dict:
     from sfl_core import format_ready_alert, Event
     # Восстанавливаем Event из сохранённого состояния для форматирования
     dummy = Event("Heart Balloon", "❤️", 0, stored.get("count", 1),
-                  stored.get("ready_count", 1), resource_key="balloon")
+                  stored.get("ready_count", 1), extra=stored.get("extra", ""),
+                  resource_key="balloon")
     text = format_ready_alert(dummy)
 
     tg_delete(TG_TOKEN, chat_id, balloon_mid)
@@ -543,6 +547,7 @@ def _fire_pending_alert(telegram_id: int, event: "Event") -> None:
             "mid":          mid,
             "ready_count":  wave_count,
             "count":        event.count,
+            "extra":        event.extra,
             "sent_count":   0,
             "last_sent_at": time.time(),
         }
