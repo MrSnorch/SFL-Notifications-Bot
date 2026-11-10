@@ -370,6 +370,9 @@ TRACK_LABELS = [
 # Ключи «специальных» тогглов — используются в settings_keyboard для группировки
 SPECIAL_TRACK_KEYS = {"balloon", "quest", "daily_reward", "skills"}
 
+# Максимум наград за пазлы Heart Balloon в сутки (UTC)
+BALLOON_DAILY_PRIZES = 2
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENT CLASS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -771,35 +774,48 @@ def scan_farm(farm: dict, track: dict,
 
     # ── BALLOON (Floating Island / Шарик) ────────────────────────────────────
     # Шарик прилетает по расписанию (floatingIsland.schedule).
-    # Пропускаем если пользователь уже решил головоломку сегодня (petalPuzzleSolvedAt).
+    # В день даётся награда максимум за BALLOON_DAILY_PRIZES (2) пазла.
+    # Забранные награды лежат в floatingIsland.prizeClaims[{claimedAt, game, roundId}].
+    # День считаем по UTC (сброс игры в 00:00 UTC). Если за день уже забрано 2 —
+    # уведомление на окна этого дня не шлём. Если забрано 1 — шлём с пометкой [1/2].
     if track.get("balloon", True):
         fi = farm.get("floatingIsland") or {}
         if isinstance(fi, dict):
-            petal_ts = fi.get("petalPuzzleSolvedAt", 0) or 0
-            petal_ts = _fix_ts(petal_ts)
-            solved_today = False
-            if petal_ts:
-                from datetime import timezone as _utc
-                solved_dt = datetime.fromtimestamp(petal_ts / 1000, tz=_utc.utc).date()
-                today_dt  = datetime.now(tz=_utc.utc).date()
-                solved_today = (solved_dt == today_dt)
+            day_ms = 86_400_000
+            claimed_by_day: dict[int, set] = {}
+            for pc in (fi.get("prizeClaims") or []):
+                if not isinstance(pc, dict):
+                    continue
+                ts = pc.get("claimedAt")
+                if not isinstance(ts, (int, float)) or not ts:
+                    continue
+                ts = _fix_ts(ts)
+                claimed_by_day.setdefault(int(ts // day_ms), set()).add(
+                    (pc.get("game"), pc.get("roundId")))
 
-            if not solved_today:
-                schedule = [s for s in fi.get("schedule", [])
-                            if isinstance(s, dict)
-                            and isinstance(s.get("startAt"), (int, float))
-                            and isinstance(s.get("endAt"),   (int, float))]
-                # Берём только окна которые ещё не закончились
-                future = [(int(s["startAt"]), int(s["endAt"]))
-                          for s in schedule if s["endAt"] > now_ms]
-                if future:
-                    next_start, next_end = min(future, key=lambda x: x[0])
-                    is_here = next_start <= now_ms
-                    rc = 1 if is_here else 0
-                    events.append(Event("Heart Balloon", "❤️", next_start, 1, rc,
-                        extra="",
-                        last_ready_at_ms=next_end,
-                        resource_key="balloon"))
+            schedule = [s for s in fi.get("schedule", [])
+                        if isinstance(s, dict)
+                        and isinstance(s.get("startAt"), (int, float))
+                        and isinstance(s.get("endAt"),   (int, float))]
+            # Берём только окна которые ещё не закончились и в день которых
+            # игрок ещё не забрал все награды
+            future = []
+            for s_ in schedule:
+                st, en = int(s_["startAt"]), int(s_["endAt"])
+                if en <= now_ms:
+                    continue
+                if len(claimed_by_day.get(st // day_ms, ())) >= BALLOON_DAILY_PRIZES:
+                    continue
+                future.append((st, en))
+            if future:
+                next_start, next_end = min(future, key=lambda x: x[0])
+                claimed_n = len(claimed_by_day.get(next_start // day_ms, ()))
+                is_here = next_start <= now_ms
+                rc = 1 if is_here else 0
+                events.append(Event("Heart Balloon", "❤️", next_start, 1, rc,
+                    extra=f"{claimed_n}/{BALLOON_DAILY_PRIZES}",
+                    last_ready_at_ms=next_end,
+                    resource_key="balloon"))
 
     # ── QUEST (Pumpkin Pete Telegram quest) ──────────────────────────────────
     # startAt — время когда Quest станет доступен (может быть в будущем).
@@ -898,9 +914,14 @@ _I18N = {
         "uk": "{emoji} <b>{name}{cnt}{extra} — готово до збору ✅</b>",
     },
     "balloon_arrived": {
-        "ru": "❤️ <b>Heart Balloon прилетел!</b>{until}",
-        "en": "❤️ <b>Heart Balloon arrived!</b>{until}",
-        "uk": "❤️ <b>Heart Balloon прилетів!</b>{until}",
+        "ru": "❤️ <b>Heart Balloon прилетел!</b>{until}{claimed}",
+        "en": "❤️ <b>Heart Balloon arrived!</b>{until}{claimed}",
+        "uk": "❤️ <b>Heart Balloon прилетів!</b>{until}{claimed}",
+    },
+    "balloon_claimed": {
+        "ru": "\n✅ Забрано Heart Balloon [{n}]",
+        "en": "\n✅ Claimed Heart Balloon [{n}]",
+        "uk": "\n✅ Забрано Heart Balloon [{n}]",
     },
     "balloon_until": {
         "ru": " Успей слетать до {clock}!",
@@ -1158,7 +1179,10 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
             mins_left = max(1, int((e.last_ready_at_ms - now_ms) / 60_000))
             clock = datetime.fromtimestamp(e.last_ready_at_ms / 1000, tz=UA_TZ).strftime("%H:%M")
             until = _i18n("balloon_until", lang, clock=clock, mins=mins_left)
-        return _i18n("balloon_arrived", lang, until=until)
+        claimed = ""
+        if e.extra and "/" in str(e.extra) and not str(e.extra).startswith("0/"):
+            claimed = _i18n("balloon_claimed", lang, n=e.extra)
+        return _i18n("balloon_arrived", lang, claimed=claimed, until=until)
     if getattr(e, "resource_key", "") == "quest":
         return _i18n("quest_arrived", lang)
     is_honey = e.name == "Honey"
