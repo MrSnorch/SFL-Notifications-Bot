@@ -378,6 +378,31 @@ BALLOON_DAILY_PRIZES = 2
 # EVENT CLASS
 # ══════════════════════════════════════════════════════════════════════════════
 
+import sfl_boosts as _sb
+
+
+def _safe_windows(fn, *args) -> list:
+    """Окна ускорения; при любой ошибке в данных — без окон (не роняем скан)."""
+    try:
+        return fn(*args)
+    except Exception:
+        return []
+
+
+def _boosted_ready(start_ms, base_ms, windows) -> int:
+    """readyAt по новой модели (baseDurationMs + окна ускорения)."""
+    try:
+        return int(_sb.compute_ready_at(start_ms, base_ms, windows))
+    except Exception:
+        return int(start_ms + base_ms)
+
+
+def _bdm(obj):
+    """baseDurationMs из словаря ресурса, если это положительное число."""
+    v = _d(obj).get("baseDurationMs")
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
+
+
 class Event:
     def __init__(self, name, emoji, ready_at_ms, count=1, ready_count=0,
                  extra="", pending_at_ms=None, last_ready_at_ms=None, ready_times=None,
@@ -481,6 +506,7 @@ def scan_farm(farm: dict, track: dict,
     # ── CROPS ─────────────────────────────────────────────────────────────────
     if track.get("crops", True):
         crop_map: dict[str, list] = {}
+        _crop_wins = _safe_windows(_sb.crop_windows, farm)
         for pid, plot in farm.get("crops", {}).items():
             if not isinstance(plot, dict):
                 continue
@@ -494,6 +520,13 @@ def scan_farm(farm: dict, track: dict,
                 continue
             planted = _fix_ts(c.get("plantedAt", 0))
             if not planted:
+                continue
+            bdm = _bdm(c)
+            if bdm:
+                # Новая модель: plantedAt — реальное время посадки, baseDurationMs — «работа»
+                # с учётом постоянных бонусов, временные бусты — окнами ускорения.
+                wins = _crop_wins + _safe_windows(_sb.crop_fertiliser_windows, plot.get("fertiliser"))
+                crop_map.setdefault(name, []).append(_boosted_ready(planted, bdm, wins))
                 continue
             grow = CROP_GROW_MS.get(name, 3_600_000)
             crop_map.setdefault(name, []).append(planted + grow)
@@ -509,12 +542,15 @@ def scan_farm(farm: dict, track: dict,
     # ── TREES ─────────────────────────────────────────────────────────────────
     if track.get("trees", True):
         tt = []
+        _tree_wins = _safe_windows(_sb.tree_windows, farm)
         for tid, tree in farm.get("trees", {}).items():
             if not isinstance(tree, dict):
                 continue
-            ch = _fix_ts(_d(tree.get("wood")).get("choppedAt", 0))
+            wood = _d(tree.get("wood"))
+            ch = _fix_ts(wood.get("choppedAt", 0))
             if ch:
-                tt.append(ch + TREE_RESPAWN_MS)
+                bdm = _bdm(wood)
+                tt.append(_boosted_ready(ch, bdm, _tree_wins) if bdm else ch + TREE_RESPAWN_MS)
         if tt:
             tt.sort(); rc = sum(1 for t in tt if t <= now_ms)
             pnd = tt[rc] if rc < len(tt) else tt[-1]
@@ -532,12 +568,15 @@ def scan_farm(farm: dict, track: dict,
     ]:
         if track.get(key, False):
             st = []
+            _mine_wins = _safe_windows(_sb.mine_windows, farm, key)
             for sid, s in farm.get(key, {}).items():
                 if not isinstance(s, dict):
                     continue
-                m = _fix_ts(_d(s.get("stone")).get("minedAt", 0))
+                stone = _d(s.get("stone"))
+                m = _fix_ts(stone.get("minedAt", 0))
                 if m:
-                    st.append(m + respawn)
+                    bdm = _bdm(stone)
+                    st.append(_boosted_ready(m, bdm, _mine_wins) if bdm else m + respawn)
             if st:
                 st.sort(); rc = sum(1 for t in st if t <= now_ms)
                 pnd = st[rc] if rc < len(st) else st[-1]
@@ -549,12 +588,15 @@ def scan_farm(farm: dict, track: dict,
     # ── OIL ───────────────────────────────────────────────────────────────────
     if track.get("oil", False):
         ot = []
+        _oil_wins = _safe_windows(_sb.oil_windows, farm)
         for oid, s in farm.get("oilReserves", {}).items():
             if not isinstance(s, dict):
                 continue
-            d = _fix_ts(_d(s.get("oil")).get("drilledAt", 0))
+            oil = _d(s.get("oil"))
+            d = _fix_ts(oil.get("drilledAt", 0))
             if d:
-                ot.append(d + OIL_RESPAWN_MS)
+                bdm = _bdm(oil)
+                ot.append(_boosted_ready(d, bdm, _oil_wins) if bdm else d + OIL_RESPAWN_MS)
         if ot:
             ot.sort(); rc = sum(1 for t in ot if t <= now_ms)
             pnd = ot[rc] if rc < len(ot) else ot[-1]
@@ -613,6 +655,7 @@ def scan_farm(farm: dict, track: dict,
     # ── FRUITS ────────────────────────────────────────────────────────────────
     if track.get("fruits", True):
         fruit_map: dict[str, list] = {}
+        _fruit_wins = _safe_windows(_sb.fruit_windows, farm)
         for pid, patch in farm.get("fruitPatches", {}).items():
             if not isinstance(patch, dict):
                 continue
@@ -625,6 +668,11 @@ def scan_farm(farm: dict, track: dict,
             # readyAt = (harvestedAt или plantedAt) + BASE_REGROW_MS
             hv = _fix_ts(fr.get("harvestedAt") or fr.get("plantedAt", 0))
             if not hv:
+                continue
+            bdm = _bdm(fr)
+            if bdm:
+                wins = _fruit_wins + _safe_windows(_sb.fruit_fertiliser_windows, patch.get("fertiliser"))
+                fruit_map.setdefault(name, []).append(_boosted_ready(hv, bdm, wins))
                 continue
             regrow = FRUIT_REGROW_MS.get(name, 12*3_600_000)
             fruit_map.setdefault(name, []).append(hv + regrow)
@@ -639,6 +687,7 @@ def scan_farm(farm: dict, track: dict,
     # ── FLOWERS ───────────────────────────────────────────────────────────────
     if track.get("flowers", True):
         flower_map: dict[str, list] = {}
+        _flower_wins = _safe_windows(_sb.flower_windows, farm)
         for bid, bed in _d(farm.get("flowers")).get("flowerBeds", {}).items():
             if not isinstance(bed, dict):
                 continue
@@ -653,7 +702,11 @@ def scan_farm(farm: dict, track: dict,
             planted = _fix_ts(fl.get("plantedAt", 0))
             if not planted:
                 continue
-            # Бусты уже закодированы в plantedAt игрой (сдвиг назад).
+            bdm = _bdm(fl)
+            if bdm:
+                flower_map.setdefault(name, []).append(_boosted_ready(planted, bdm, _flower_wins))
+                continue
+            # Старый формат: бусты закодированы в plantedAt игрой (сдвиг назад).
             # readyAt = plantedAt + BASE_SEED_TIME_MS — никаких множителей не нужно.
             grow = FLOWER_GROW_MS.get(name, _FLOWER_GROW_MS_DEFAULT)
             flower_map.setdefault(name, []).append(planted + grow)
