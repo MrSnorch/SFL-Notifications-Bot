@@ -99,7 +99,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install requests tzdata
 
       - name: Run loop for user ${{ matrix.telegram_id }}
         id: scan
