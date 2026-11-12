@@ -995,6 +995,11 @@ _I18N = {
     "boost_ready": {
         "ru": "готов ✅", "en": "ready ✅", "uk": "готовий ✅",
     },
+    "status_footer": {
+        "ru": "\n🌻 Ферма {farm_id} обновлено: {ts}",
+        "en": "\n🌻 Farm {farm_id} updated: {ts}",
+        "uk": "\n🌻 Ферма {farm_id} оновлено: {ts}",
+    },
     "updated_at": {
         "ru": "\n<i>Обновлено: {ts}</i>",
         "en": "\n<i>Updated: {ts}</i>",
@@ -1136,7 +1141,7 @@ def format_status_message(events: list[Event], farm_id: str,
         return _i18n("no_resources", lang, farm_id=farm_id)
 
     pending = [e for e in events if e.ready_count < e.count]
-    lines = [_i18n("farm_header", lang, farm_id=farm_id)]
+    lines = []
 
     now_ms = int(time.time() * 1000)
     # Собираем отображаемые строки: каждая волна — отдельный элемент (ms, line)
@@ -1180,8 +1185,6 @@ def format_status_message(events: list[Event], farm_id: str,
     if not pending and not display_items:
         lines.append(_i18n("all_ready", lang))
     else:
-        lines.append("")
-
         for e in pending:
             swarm_extra = ""
             if e.name == "Honey" and e.extra:
@@ -1248,9 +1251,9 @@ def format_status_message(events: list[Event], farm_id: str,
         for e in ready_skills:
             lines.append(f"  {e.emoji} {e.name}")
 
-    ts = datetime.now(tz=_tz).strftime("%d.%m %H:%M")
-    lines.append(_i18n("updated_at", lang, ts=ts))
-    return "\n".join(lines)
+    ts = datetime.now(tz=_tz).strftime("%H:%M %d.%m.%Y")
+    lines.append(_i18n("status_footer", lang, farm_id=farm_id, ts=ts))
+    return "\n".join(lines).lstrip("\n")
 
 
 def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None) -> str:
