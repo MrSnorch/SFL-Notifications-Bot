@@ -126,7 +126,8 @@ def process_ready_alerts(chat_id: int, events: list[Event],
                     "last_sent_at": now,
                 }
                 log.info(f"[{chat_id}] Новая волна алерта «{key}»: {old_rc}→{e.ready_count}/{e.count}")
-            elif e.ready_count != old_rc or e.count > old_c:
+            elif (e.ready_count != old_rc or e.count > old_c
+                  or (r_key == "balloon" and e.extra != stored.get("extra", e.extra))):
                 # Изменилось количество готового (выросло в рамках текущей волны либо игрок собрал часть) — редактируем без пинга
                 tg_edit(TG_TOKEN, chat_id, mid, text,
                         reply_markup=_dismiss_keyboard(key))
