@@ -132,6 +132,7 @@ CROP_GROW_MS: dict[str, int] = {
     "Tomato":      2*3_600_000,
     "Lemon":       4*3_600_000,
     "Saltwort":    12*3_600_000,
+    "Crystal Leaf": 24*3_600_000,
 }
 
 FRUIT_REGROW_MS: dict[str, int] = {
