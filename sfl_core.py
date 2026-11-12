@@ -213,6 +213,12 @@ POWER_SKILL_COOLDOWNS: dict[str, int] = {
     "Salt Surge":           1000 * 60 * 60 * 72,   # 3 дня
 }
 
+# Какой power-скилл ускоряет какой ресурс — его готовность показываем в алерте о сборе
+BOOST_SKILL_BY_RESOURCE: dict[str, str] = {
+    "crops":   "Instant Growth",
+    "flowers": "Petal Blessed",
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # АВТОДЕТЕКТ ДИНАМИЧЕСКИХ РЕСУРСОВ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -406,7 +412,7 @@ def _bdm(obj):
 class Event:
     def __init__(self, name, emoji, ready_at_ms, count=1, ready_count=0,
                  extra="", pending_at_ms=None, last_ready_at_ms=None, ready_times=None,
-                 resource_key=""):
+                 resource_key="", boost_name="", boost_ready_at_ms=None):
         self.name         = name
         self.emoji        = emoji
         self.ready_at_ms  = ready_at_ms
@@ -420,6 +426,10 @@ class Event:
         self.ready_times  = ready_times
         # Ключ категории ресурса (crops / trees / stones / …) для per-resource настроек повтора
         self.resource_key = resource_key
+        # Буст-скилл (Instant Growth / Petal Blessed): когда снова доступен.
+        # boost_ready_at_ms: None — скилла нет, 0 — ни разу не использован (готов).
+        self.boost_name = boost_name
+        self.boost_ready_at_ms = boost_ready_at_ms
 
     def is_ready(self):
         return self.ready_at_ms <= int(time.time() * 1000)
@@ -498,6 +508,18 @@ def _fix_ts(ts):
         return ts * 1000
     return ts
 
+def _power_skill_ready_at(farm: dict, skill_name: str):
+    """Когда power-скилл снова доступен: None — скилл не изучен, 0 — ни разу не использован."""
+    cooldown_ms = POWER_SKILL_COOLDOWNS.get(skill_name)
+    bumpkin = _d(farm.get("bumpkin"))
+    if not cooldown_ms or skill_name not in _d(bumpkin.get("skills")):
+        return None
+    last = _fix_ts(_d(bumpkin.get("previousPowerUseAt")).get(skill_name))
+    if not isinstance(last, (int, float)) or isinstance(last, bool) or last <= 0:
+        return 0
+    return int(last + cooldown_ms)
+
+
 def scan_farm(farm: dict, track: dict,
               dynamic_resources: list[dict] | None = None) -> list[Event]:
     events = []
@@ -507,6 +529,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("crops", True):
         crop_map: dict[str, list] = {}
         _crop_wins = _safe_windows(_sb.crop_windows, farm)
+        _crop_boost = (_power_skill_ready_at(farm, BOOST_SKILL_BY_RESOURCE["crops"])
+                       if track.get("skills", True) else None)
         for pid, plot in farm.get("crops", {}).items():
             if not isinstance(plot, dict):
                 continue
@@ -537,7 +561,9 @@ def scan_farm(farm: dict, track: dict,
             events.append(Event(name, "🌾", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} участков",
                 pending_at_ms=pnd, last_ready_at_ms=times[-1], ready_times=times,
-                resource_key="crops"))
+                resource_key="crops",
+                boost_name=BOOST_SKILL_BY_RESOURCE["crops"] if _crop_boost is not None else "",
+                boost_ready_at_ms=_crop_boost))
 
     # ── TREES ─────────────────────────────────────────────────────────────────
     if track.get("trees", True):
@@ -688,6 +714,8 @@ def scan_farm(farm: dict, track: dict,
     if track.get("flowers", True):
         flower_map: dict[str, list] = {}
         _flower_wins = _safe_windows(_sb.flower_windows, farm)
+        _flower_boost = (_power_skill_ready_at(farm, BOOST_SKILL_BY_RESOURCE["flowers"])
+                         if track.get("skills", True) else None)
         for bid, bed in _d(farm.get("flowers")).get("flowerBeds", {}).items():
             if not isinstance(bed, dict):
                 continue
@@ -716,7 +744,9 @@ def scan_farm(farm: dict, track: dict,
             events.append(Event(name, "🌸", times[0], len(times), rc,
                 f"{rc}/{len(times)} готово" if rc else f"{len(times)} грядок",
                 pending_at_ms=pnd, last_ready_at_ms=times[-1],
-                resource_key="flowers"))
+                resource_key="flowers",
+                boost_name=BOOST_SKILL_BY_RESOURCE["flowers"] if _flower_boost is not None else "",
+                boost_ready_at_ms=_flower_boost))
 
     # ── HONEY ─────────────────────────────────────────────────────────────────
     # Скорость производства мёда:
@@ -956,6 +986,14 @@ _I18N = {
         "ru": "{emoji} <b>{name} — готово к использованию ✅</b>",
         "en": "{emoji} <b>{name} — ready to use ✅</b>",
         "uk": "{emoji} <b>{name} — готово до використання ✅</b>",
+    },
+    "boost_line": {
+        "ru": "\n⚡ {name}: {state}",
+        "en": "\n⚡ {name}: {state}",
+        "uk": "\n⚡ {name}: {state}",
+    },
+    "boost_ready": {
+        "ru": "готов ✅", "en": "ready ✅", "uk": "готовий ✅",
     },
     "updated_at": {
         "ru": "\n<i>Обновлено: {ts}</i>",
@@ -1241,8 +1279,15 @@ def format_ready_alert(e: Event, lang: str = "ru", wave_count: int | None = None
         return _i18n("quest_arrived", lang)
     is_honey = e.name == "Honey"
     extra_label = f" ({e.extra})" if (e.extra and is_honey) else ""
-    return _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
+    text = _i18n("ready_alert", lang, emoji=e.emoji, name=e.name,
                  cnt=cnt, extra=extra_label)
+    # Урожай / цветы: добавляем, через сколько снова доступен Instant Growth / Petal Blessed
+    boost_at = getattr(e, "boost_ready_at_ms", None)
+    if getattr(e, "boost_name", "") and boost_at is not None:
+        left = boost_at - now_ms
+        state = _i18n("boost_ready", lang) if left <= 0 else _fmt_ms_human(left, lang)
+        text += _i18n("boost_line", lang, name=e.boost_name, state=state)
+    return text
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ДАННЫЕ QuestОВ (Pumpkin Pete Telegram quests)
