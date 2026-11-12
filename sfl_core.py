@@ -12,6 +12,8 @@ try:
         try:
             return _ZoneInfo(name)
         except Exception:
+            logging.getLogger("SFL").warning(
+                f"Часовой пояс «{name}» не найден (нет tzdata?) — фолбэк на UTC")
             return _dtz(_td(hours=0))
 except ImportError:
     def _make_tz(name: str):  # type: ignore
@@ -1129,6 +1131,17 @@ def split_ready_into_waves(ready_times: list, window_ms: int = 60_000) -> list[t
     return groups
 
 
+def _utc_label(dt: datetime) -> str:
+    """'UTC', 'UTC+2', 'UTC-5', 'UTC+5:30' — по реальному смещению времени dt."""
+    off = dt.utcoffset()
+    mins = int(off.total_seconds() // 60) if off else 0
+    if mins == 0:
+        return "UTC"
+    sign = "+" if mins > 0 else "-"
+    h, m = divmod(abs(mins), 60)
+    return f"UTC{sign}{h}" + (f":{m:02d}" if m else "")
+
+
 def format_status_message(events: list[Event], farm_id: str,
                            tz=None, lang: str = "ru",
                            time_format: str = "both",
@@ -1251,7 +1264,8 @@ def format_status_message(events: list[Event], farm_id: str,
         for e in ready_skills:
             lines.append(f"  {e.emoji} {e.name}")
 
-    ts = datetime.now(tz=_tz).strftime("%H:%M %d.%m.%Y")
+    _now = datetime.now(tz=_tz)
+    ts = _now.strftime("%H:%M %d.%m.%Y") + f" ({_utc_label(_now)})"
     lines.append(_i18n("status_footer", lang, farm_id=farm_id, ts=ts))
     return "\n".join(lines).lstrip("\n")
 
